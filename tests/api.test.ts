@@ -1,6 +1,7 @@
 // @vitest-environment node
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { POST as chatPOST } from "@/app/api/chat/route";
+import { POST as debugEmitPOST } from "@/app/api/debug/emit/route";
 import { GET as eventsGET } from "@/app/api/events/route";
 import { POST as resetPOST } from "@/app/api/reset/route";
 import { GET as sessionGET, POST as sessionPOST } from "@/app/api/session/route";
@@ -11,7 +12,7 @@ import {
   type CompletionResult,
 } from "@/lib/agent";
 import { createSession, getOrder, resetAllSessions } from "@/lib/db";
-import { __resetBusForTests, emit } from "@/lib/event-bus";
+import { __resetBusForTests, emit, getHistory } from "@/lib/event-bus";
 
 beforeEach(() => {
   resetAllSessions();
@@ -150,6 +151,29 @@ describe("POST /api/reset", () => {
     createSession();
     const res = await resetPOST(postReq("http://t/api/reset", {}));
     expect(((await res.json()) as { scope: string }).scope).toBe("all");
+  });
+});
+
+describe("POST /api/debug/emit (dev-only trace injector)", () => {
+  it("only targets synthetic sess_debug* ids and injects a full failure/retry trace", async () => {
+    // A real session id is rejected — the injector cannot forge a trace into a real customer's log.
+    expect(
+      (await debugEmitPOST(postReq("http://t/api/debug/emit", { sessionId: "sess_real" }))).status,
+    ).toBe(400);
+
+    const res = await debugEmitPOST(
+      postReq("http://t/api/debug/emit", { sessionId: "sess_debugX" }),
+    );
+    expect(res.status).toBe(200);
+    expect((await res.json()) as { emitted: number }).toMatchObject({ ok: true, emitted: 7 });
+
+    const hist = getHistory("sess_debugX");
+    expect(hist.some((e) => e.type === "retry")).toBe(true);
+    expect(
+      hist.some(
+        (e) => e.type === "decision" && (e.payload as { outcome: string }).outcome === "escalated",
+      ),
+    ).toBe(true);
   });
 });
 

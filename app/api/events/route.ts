@@ -1,4 +1,4 @@
-import { getHistory, getSessionsWithEvents, subscribe } from "@/lib/event-bus";
+import { getFirehoseHistory, getHistory, subscribe } from "@/lib/event-bus";
 import type { ReasoningEvent } from "@/lib/events";
 import { sseResponse } from "@/lib/sse";
 
@@ -9,8 +9,9 @@ export const maxDuration = 300; // long-lived dashboard feed
 /**
  * GET /api/events?sessionId=... — SSE feed of reasoning events for the admin dashboard.
  * Omit sessionId (or pass `*` / `all=1`) for a firehose across all sessions. On connect it BACKFILLS
- * history (so a dashboard opened mid-conversation sees prior events), honoring the SSE `Last-Event-ID`
- * header for single-session reconnection, then tails new events.
+ * history (so a dashboard opened mid-conversation sees prior events), then tails new events. The SSE
+ * `Last-Event-ID` header is honored on BOTH the single-session and firehose paths, so a reconnecting
+ * dashboard resumes after its last-seen event instead of re-streaming the whole (bounded) history.
  */
 export async function GET(request: Request): Promise<Response> {
   const url = new URL(request.url);
@@ -26,9 +27,7 @@ export async function GET(request: Request): Promise<Response> {
     const unsubscribe = subscribe(firehose ? "*" : sessionId!, forward);
 
     if (firehose) {
-      for (const sid of getSessionsWithEvents()) {
-        for (const e of getHistory(sid)) forward(e);
-      }
+      for (const e of getFirehoseHistory(lastEventId)) forward(e);
     } else {
       const history = getHistory(sessionId!);
       const startIndex = lastEventId ? history.findIndex((e) => e.id === lastEventId) + 1 : 0;

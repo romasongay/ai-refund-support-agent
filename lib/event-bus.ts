@@ -1,7 +1,9 @@
 /**
  * In-memory reasoning-event bus. Tools and both agents publish through it; the admin dashboard
  * consumes it. It keeps a bounded per-session history so a dashboard opened mid-conversation can
- * BACKFILL (not just tail), and supports per-session and firehose ("*") subscriptions.
+ * BACKFILL (not just tail), and supports per-session and firehose ("*") subscriptions. The firehose
+ * backfill is reconstructed by merging the per-session histories in global publish order, so no
+ * single session's history is ever evicted early by another session's volume.
  */
 import {
   createEvent,
@@ -20,6 +22,16 @@ const history = new Map<string, ReasoningEvent[]>();
 const sessionListeners = new Map<string, Set<EventListener>>();
 const firehoseListeners = new Set<EventListener>();
 
+/**
+ * Monotonic publish sequence, stamped (non-enumerably, so it never serializes onto the SSE wire) on
+ * each stored event. It gives a stable GLOBAL chronological order across sessions for the firehose
+ * backfill — which is reconstructed by merging the per-session histories, so a specific session's
+ * full history stays backfillable no matter how busy other sessions are (no lossy global cap).
+ */
+let seqCounter = 0;
+const SEQ = Symbol("seq");
+const seqOf = (e: ReasoningEvent): number => (e as ReasoningEvent & { [SEQ]?: number })[SEQ] ?? 0;
+
 function notify(listener: EventListener, event: ReasoningEvent): void {
   // A misbehaving subscriber must never break publishing or the agent loop.
   try {
@@ -32,6 +44,7 @@ function notify(listener: EventListener, event: ReasoningEvent): void {
 /** Validate, store, and fan out an event. Returns the stored event. */
 export function publish(event: ReasoningEvent): ReasoningEvent {
   const parsed = ReasoningEventSchema.parse(event);
+  Object.defineProperty(parsed, SEQ, { value: seqCounter++, enumerable: false });
   const list = history.get(parsed.sessionId) ?? [];
   list.push(parsed);
   if (list.length > MAX_EVENTS_PER_SESSION) {
@@ -80,9 +93,21 @@ export function getHistory(sessionId: string): ReasoningEvent[] {
   return (history.get(sessionId) ?? []).slice();
 }
 
-/** Session ids that have at least one recorded event. */
-export function getSessionsWithEvents(): string[] {
-  return [...history.keys()];
+/**
+ * Firehose backfill: EVERY session's events merged into one global chronological order (by publish
+ * sequence). Reconstructed from the per-session histories, so each session's full retained history is
+ * always backfillable regardless of cross-session volume. When `afterId` is a known event id (the SSE
+ * `Last-Event-ID` on reconnect), only events strictly after it are returned — so a reconnecting
+ * `/admin` tab resumes instead of re-streaming everything; an unknown/absent id replays the whole log
+ * (the client dedupes by id).
+ */
+export function getFirehoseHistory(afterId?: string | null): ReasoningEvent[] {
+  const merged = [...history.values()].flat().sort((a, b) => seqOf(a) - seqOf(b));
+  if (!afterId) return merged;
+  const cutoff = merged.find((e) => e.id === afterId);
+  if (!cutoff) return merged;
+  const cutoffSeq = seqOf(cutoff);
+  return merged.filter((e) => seqOf(e) > cutoffSeq);
 }
 
 export function clearSessionEvents(sessionId: string): void {
@@ -99,4 +124,5 @@ export function __resetBusForTests(): void {
   history.clear();
   sessionListeners.clear();
   firehoseListeners.clear();
+  seqCounter = 0;
 }

@@ -129,3 +129,35 @@ keep moving"). Format: `[Dn] Step N — decision — rationale`.
   (`scripts/ui-check.mts`, system Chrome, no download) exercise the adversarial focus (send-during-streaming,
   5000-char message, mobile overflow, markdown). **No client persistence**: a refresh returns to the profile
   selector (the server session persists in memory), which is graceful, not a break.
+
+## Step 7 — Admin dashboard (real-time reasoning logs)
+
+- **[D31] Firehose-only client + `import type` boundary** — `/admin` renders one client `AdminDashboard` that opens
+  a SINGLE firehose `EventSource` (`/api/events` with no `sessionId`) across all sessions, deriving the session
+  list, stats, and per-session timeline from that one stream. `lib/client/events-stream.ts` re-declares the event
+  types as client-safe values and does an `import type` from `lib/events`, keeping `node:crypto` out of the browser
+  bundle (same discipline as Step 6). A client-side `isReasoningEvent` envelope guard drops malformed frames; each
+  row is wrapped in a per-row `ErrorBoundary` and the route has an `app/error.tsx`, so no single event can blank the page.
+- **[D32] Firehose backfill = merged per-session histories, ordered by a publish sequence** — the event bus stamps
+  each stored event with a monotonic, **non-enumerable** `SEQ` (so it never serializes onto the SSE wire) and
+  `getFirehoseHistory()` reconstructs the cross-session backfill by merging the per-session histories in `SEQ`
+  order. This keeps every session's full retained history backfillable regardless of other sessions' volume (no
+  lossy global cap) while still honoring `Last-Event-ID` for efficient reconnect-resume. Chosen over a single global
+  log after Sweep 2 showed a global cap strands a busy deployment's early per-session events (S7-F9).
+- **[D33] Pagination over virtualization** — the timeline renders the latest `PAGE_SIZE` (400) events by default and
+  offers a "Show older" control that pages further back through the full backfilled history. This satisfies the
+  spec's "200+ events (virtualize **or** paginate)" without adding a virtualization dependency, and keeps the
+  default view responsive. The page window is tagged with the session it applies to and derived at render time, so
+  switching sessions resets to one page **without** a state-sync effect (avoids the `set-state-in-effect` lint rule;
+  same pattern as the `effectiveId` derivation). The client store is separately bounded at `MAX_CLIENT_EVENTS` (5000).
+- **[D34] Dev-only `POST /api/debug/emit` for end-to-end failure/retry verification + demo** — the spec's CRITICAL
+  clause (a forced error/retry sequence must DISPLAY exactly as required) can't be forced deterministically through
+  the real LLM, so a dev/test-only route injects a realistic 7-event failure/retry/escalation trace through the real
+  bus→SSE→`EventRow` path. It is **inert in production** (`NODE_ENV==='production'` → 404) and restricted to a
+  synthetic `sess_debug*` namespace so it can never forge a trace into a real customer session's log (S7-F10). It
+  writes only to the in-memory reasoning log (no data mutation, no secrets) and doubles as the Step-10 demo's
+  failure/retry beat. `scripts/admin-check.mts` uses it to assert the amber Retry + rose Error rows render prominently.
+- **[D35] Accessibility of the live log** — the timeline container is a focusable `role="log"` `aria-live="polite"`
+  region (`tabIndex=0` + focus ring), consistent with the `aria-pressed` filter chips and `aria-current` session
+  buttons; clause chips are keyed by `${clause}-${i}` (in both the dashboard and the Step-6 banner) so duplicate
+  citations can't collide on the React key and silently drop.

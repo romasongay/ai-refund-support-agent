@@ -22,9 +22,11 @@ export function DecisionBanner({ decision }: { decision: DecisionPayload }) {
         <span className="font-semibold">· ${decision.amount.toFixed(2)}</span>
       )}
       <span className="ml-auto flex flex-wrap gap-1">
-        {decision.clauses.map((clause) => (
+        {decision.clauses.map((clause, i) => (
+          // Key by index too: model-supplied clause lists aren't guaranteed unique, and a duplicate
+          // key would silently drop a citation chip.
           <span
-            key={clause}
+            key={`${clause}-${i}`}
             className="rounded-full bg-black/5 px-2 py-0.5 text-xs font-medium dark:bg-white/10"
           >
             {clause}

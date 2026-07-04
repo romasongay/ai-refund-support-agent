@@ -96,6 +96,9 @@ try {
   console.log(ok ? "\nAPI SMOKE PASS" : "\nAPI SMOKE FAIL");
   process.exit(ok ? 0 : 2);
 } catch (err) {
-  console.error("\nAPI SMOKE ERROR (server not running? network?):", err instanceof Error ? err.message : err);
+  console.error(
+    "\nAPI SMOKE ERROR (server not running? network?):",
+    err instanceof Error ? err.message : err,
+  );
   process.exit(3);
 }

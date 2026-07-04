@@ -261,3 +261,81 @@ checks pass after the a11y edits (selector, approve flow + decision banner, send
 mobile no overflow).
 
 **Result: CLEAN — zero findings.** Exit rule met (3 sweeps, most recent clean). Step 6 closed.
+
+---
+
+> **Sweep cycle restarted.** The first pass at Step 7 was interrupted by a usage-limit reset; its
+> closing sweep-3 review had errored out (not a genuine clean sweep). Per §2.1 the cycle was **restarted
+> from a fresh full sweep**. The record below is the authoritative Step-7 cycle. Fixes applied *before* the
+> restart are baked into the build and were re-verified this cycle (see Build note); newly-found issues are
+> numbered S7-F1…S7-F10 below.
+
+**Build note (pre-restart fixes, re-verified clean this cycle):** the auto-scroll effect keys off the
+newest-rendered event id + stick-to-bottom `atBottomRef` (never yanks while reading scrollback, never on an
+unrelated session's event); a malformed/shape-invalid frame is dropped at the client boundary by
+`isReasoningEvent` and a per-row `ErrorBoundary` + a route-level `app/error.tsx` prevent any single event from
+blanking the dashboard; switching sessions jumps to that session's latest activity via an `effectiveId` effect.
+
+## Step 7 — Sweep 1
+
+**Mechanical gate:** `tsc` 0 · ESLint 0 · Vitest **122/122** · `next build` OK (`/`,`/admin` static; `/api/*`
+dynamic). **Browser check** (`scripts/admin-check.mts`, Playwright + system Chrome, real chat → events):
+backfill-on-open, type filter, outcome stats, and two dashboard tabs all pass. Screenshots reviewed — distinct
+per-type rows (colored left borders), collapsible args/result JSON, prominent green "Decision · approved" row.
+
+**Adversarial review:** 3-lens hostile workflow (logic/state/streaming · rendering/robustness/malformed ·
+spec-verification), each finding independently refuted. 11 raw → **8 confirmed** (3 refuted: a claimed
+subscribe-before-backfill interleave — unreachable in single-threaded JS; a filter+cap empty-timeline — the cap
+applies *after* filtering; and an amount-0 hidden figure — an approved decision with amount 0 is never emitted).
+
+- 🟡 **[S7-F1]** `prettier --check` failed on two `.mts` scripts (`admin-check`, `smoke-api` — a latent Step-5
+  file that was never prettier-clean). → **FIXED**: re-wrapped the over-width lines; gate now `prettier --check` 0.
+- 🔴 **[S7-F2]** The firehose ignored `Last-Event-ID`, so any EventSource auto-reconnect re-streamed the ENTIRE
+  history of ALL sessions (redundant re-parse each reconnect). → **FIXED** (see also S7-F9): firehose backfill now
+  honors `Last-Event-ID` and resumes strictly after the last-seen event. + bus tests.
+- 🟠 **[S7-F3]** Client event store (`events` array + `seenRef` Set) grew without bound; `RENDER_CAP` only bounds
+  *rendering*, not storage. → **FIXED**: `setEvents` caps at `MAX_CLIENT_EVENTS` (5000), dropping oldest and
+  evicting their ids from `seenRef`.
+- 🟠 **[S7-F4]** Duplicate clause strings in a decision (e.g. `["R1","R1"]`, valid — schema enforces `.min(1)` not
+  uniqueness) collided on the React `key`, dropping a citation the spec wants surfaced. → **FIXED**: key clause
+  chips by `${clause}-${i}` in **both** `event-row.tsx` and the Step-6 `decision-banner.tsx`. + a no-dup-key-warning test.
+- 🟠 **[S7-F5]** `isReasoningEvent`'s doc claimed per-payload safety it doesn't provide (it validates the envelope
+  only); the `stats`/`sessions` memos read `payload.outcome` unguarded (latent — server Zod-validates the wire).
+  → **FIXED**: corrected the doc; memos now count/record only a known `outcome` via `isOutcome()`. + a guarded-stats test.
+- 🟡 **[S7-F6]** The live timeline wasn't keyboard-focusable and had no live-region role (inconsistent with the
+  `aria-pressed`/`aria-current` used elsewhere). → **FIXED**: `tabIndex=0`, `role="log"`, `aria-live="polite"`,
+  `aria-label` + a focus ring. Asserted by the browser check.
+- 🟠 **[S7-F7]** CRITICAL spec clause unverified end-to-end: no check confirmed a FORCED error/retry sequence flows
+  bus→SSE→dashboard and renders prominently (only unit-tested). → **FIXED**: added a dev/test-only
+  `POST /api/debug/emit` (inert in production) that injects a realistic failure/retry trace, and extended
+  `admin-check.mts` to open a fresh tab and assert the Retry (amber) + Error/failed (rose) rows render prominently.
+- 🟠 **[S7-F8]** `RENDER_CAP` hard-truncated to the latest 400 with older events permanently unreachable (the spec
+  asks to *virtualize or paginate* 200+ events). → **FIXED**: added a "Show older" pagination control that pages
+  further back through the full history; default view stays the latest page (responsive). + a pagination test.
+
+## Step 7 — Sweep 2
+
+Re-ran the gate after the S1 fixes (`tsc`/ESLint 0 · `prettier` clean · Vitest **130/130** · `next build` OK ·
+browser check PASS incl. the new forced error/retry + a11y assertions). Ran a hostile **re-review of the fixes**
+(3 lenses: fix-correctness/regressions · debug-route security · spec/consistency), each finding verified. 2 raw
+→ **2 confirmed** (both regressions/consequences of the S1 fixes; the spec/consistency lens was clean):
+
+- 🟠 **[S7-F9]** Regression from S7-F2: capping the firehose at a single global 5000-event log meant a busy
+  multi-session deployment could no longer backfill a specific session's early events (the dashboard only ever
+  uses the firehose). → **FIXED**: dropped the lossy global cap; the firehose backfill now **merges the
+  per-session histories** in global order via a monotonic non-enumerable publish sequence (`SEQ`), so each
+  session's full retained history stays backfillable, and `Last-Event-ID` resume still works. + a regression test.
+- 🟠 **[S7-F10]** The new debug route accepted an arbitrary caller `sessionId` with no ownership check, so in dev it
+  could inject a forged trace into a REAL session's log / inflate stats (contained to dev; production-guarded).
+  → **FIXED**: restricted the target to a synthetic `sess_debug*` namespace (real ids are `sess_<uuid>`). + a test
+  asserting a real id is rejected.
+
+## Step 7 — Sweep 3 (clean)
+
+Final full sweep: `tsc` 0 · ESLint 0 · `prettier` clean · Vitest **130/130** · `next build` OK · `admin-check`
+PASS. Fresh 3-lens hostile pass over the WHOLE Step-7 surface (logic/state/streaming · rendering/a11y/security ·
+spec/consistency), each empowered to refute — **0 raw findings** across all three lenses (66 tool calls of
+investigation). Every prior fix confirmed correct and regression-free; the SEQ-merge firehose, bounded client
+store, pagination, guarded memos, clause-key fix, a11y, and `sess_debug*`-restricted debug route all verified.
+
+**Result: CLEAN — zero findings.** Exit rule met (3 sweeps, most recent clean). Step 7 closed.
