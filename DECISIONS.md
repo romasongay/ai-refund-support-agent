@@ -98,3 +98,18 @@ keep moving"). Format: `[Dn] Step N — decision — rationale`.
 - **[D23] Real-API validation** — `scripts/smoke-agent.mts` (run via `tsx`, loads `.env.local` through
   `@next/env`) verifies real gpt-4o-mini approves an in-window order and refuses an authority-claim jailbreak.
   The full 15-profile + red-team battery with 3 green runs is Step 9's `npm run evals`.
+
+## Step 5 — API layer + SSE streaming
+
+- **[D24] Leak-free SSE helper** — `lib/sse.ts` wraps a `ReadableStream` in an SSE `Response` with a heartbeat
+  and an **idempotent teardown** funnelled from abort / cancel / close, which always clears the interval and
+  runs the caller's cleanup (bus unsubscribe). Client disconnect mid-stream leaves no orphaned handles.
+- **[D25] Four endpoints** — `POST /api/chat` streams this turn's reasoning events + a final `done` frame (a
+  per-session `inFlight` lock 409s concurrent turns; the add lives inside `onStart` so it always pairs with the
+  guaranteed `.finally` delete). `GET /api/events` is per-session or firehose (`*`), **subscribes before
+  backfilling** so nothing is missed/duplicated, honors `Last-Event-ID`, and is long-lived. `GET/POST
+  /api/session` lists/binds profiles (+ opportunistic TTL cleanup). `POST /api/reset` scopes to one session or
+  everything. All `runtime='nodejs'`, `dynamic='force-dynamic'`.
+- **[D26] Two-layer verification** — a completer test-seam (`__setDefaultCompleter`) makes `/api/chat` testable
+  offline (105 tests), and `scripts/smoke-api.mts` validates the real Next 16 SSE-over-HTTP + agent stack that
+  the unit tests (which call handlers directly) bypass.

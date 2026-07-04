@@ -98,6 +98,12 @@ ${getPolicyText()}`;
 // --- Default (real) completer ---------------------------------------------------------------
 
 let defaultCompleter: ChatCompleter | null = null;
+let overrideCompleter: ChatCompleter | null = null;
+
+/** Test seam: force the "default" completer, bypassing the real OpenAI client (used by API tests). */
+export function __setDefaultCompleter(completer: ChatCompleter | null): void {
+  overrideCompleter = completer;
+}
 
 function toSdkMessages(
   messages: AgentMessage[],
@@ -126,6 +132,7 @@ function toSdkMessages(
 }
 
 function getDefaultCompleter(): ChatCompleter {
+  if (overrideCompleter) return overrideCompleter;
   if (defaultCompleter) return defaultCompleter;
   const client = new OpenAI({ apiKey: requireOpenAIKey() });
   defaultCompleter = async ({ messages, tools }) => {

@@ -184,3 +184,42 @@ Final full sweep: `tsc` 0 · ESLint 0 · Vitest **92/92** · `next build` OK · 
 the clean Sweep-2 review.
 
 **Result: CLEAN — zero findings.** Exit rule met (3 sweeps, most recent clean). Step 4 closed.
+
+---
+
+## Step 5 — Sweep 1
+
+**Mechanical gate:** `tsc` 0 · ESLint 0 · Vitest **104/104** (+12 API tests: validation & unknown-session
+→ 400/404, event backfill, two simultaneous streams on one session, disconnect-via-abort teardown, the
+chat flow via the completer seam → tool_call/decision/done frames, and 409 concurrency) · `next build` OK.
+
+**Real-server smoke** (`scripts/smoke-api.mts` against a live dev server): `GET /api/session` → 15 profiles;
+`POST /api/session` → session; `POST /api/chat` streamed real `text/event-stream` with the full sequence
+(`user_message` → `tool_call`/`tool_result`×3 → `decision` → `assistant_message` → `done`), reply cited R1
+$129, decision approved; `/api/events` backfilled; `/api/reset` → `{ok, scope:all}`. Confirms the real Next 16
+SSE-over-HTTP + agent stack (units call the handlers directly and bypass this).
+
+**Adversarial review:** 2-lens hostile workflow (SSE/disconnect/leaks + routes/validation/spec), verified.
+2 raw → both confirmed the **same** defect (1 unique):
+
+- 🔴 **[S5-F1]** `inFlight` leak: `inFlight.add(sessionId)` ran *before* `sseResponse`, but if the request was
+  already aborted when the stream's `start()` runs, `sseResponse` tears down and returns **without** calling
+  `onStart` — so `runAgent` (and its `.finally` that does `inFlight.delete`) never runs, wedging the session at
+  409 forever. → **FIXED**: moved `inFlight.add` inside `onStart` so it always pairs with the guaranteed
+  `.finally` delete (if `onStart` never runs, nothing is added). + a pre-aborted-request test.
+
+## Step 5 — Sweep 2
+
+Re-ran the gate after the fix (`tsc`/ESLint 0, Vitest **105/105**) and ran a hostile re-review confirming the
+fix + a fresh pass on the SSE/route lifecycle (add/delete pairing, teardown paths, 409 race).
+**Result: CLEAN — 0 findings.** The reviewer confirmed the `inFlight` add now pairs with a guaranteed delete on
+every path, no other cleanup depends on the skipped `onStart`, and the 409 check has no race (`onStart` runs
+synchronously, so the add is visible to any later request).
+
+## Step 5 — Sweep 3 (clean)
+
+Final full sweep: `tsc`/ESLint 0 · Vitest **105/105** · `next build` OK (the four `/api/*` routes build as
+**Dynamic**) · real-server smoke re-run after the fix (chat streamed an approved $129/R1 decision + `done`;
+`/api/events` backfilled; `/api/reset` ok).
+
+**Result: CLEAN — zero findings.** Exit rule met (3 sweeps, most recent clean). Step 5 closed.
