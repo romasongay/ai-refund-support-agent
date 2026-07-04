@@ -82,3 +82,19 @@ keep moving"). Format: `[Dn] Step N — decision — rationale`.
   is a validated cache of `amount>0 && amount>=price` (cross-field refine) and R5 is derived from the amount;
   `executeTool` never throws (blank sessionId guarded). Event bus caps per-session history at 5000 and supports a
   firehose; global reset wiring is deferred to Step 5's `/api/reset`.
+
+## Step 4 — Text agent loop
+
+- **[D20] Injectable completer** — `lib/agent.ts` is a raw OpenAI (v6.45) `chat.completions` function-calling
+  loop, but the network call sits behind an injectable `ChatCompleter`. This makes the entire loop
+  unit-testable offline (no key, no network — 25 mock-driven tests incl. all 16 scripted flows), while the
+  real completer uses `MODELS.text` (gpt-4o-mini). The system prompt embeds the policy verbatim + hard rules.
+- **[D21] Layered guards + resilience** — a code-enforced ordering guard (per-conversation `checkedOrders`,
+  unlocks only on approve/approve_partial) sits on top of `process_refund`'s internal re-check. Max 10 tool
+  iterations → clean bail-out; max 3 retries with exponential backoff emitting `retry` events; `runAgent` never
+  throws — all setup + the loop live inside try/catch and degrade to a friendly reply + `error` event.
+- **[D22] Multi-turn store** — a per-session conversation transcript (system + turns + tool messages) gives
+  memory across turns; `resetAllConversations` is wired into Step 5's `/api/reset`.
+- **[D23] Real-API validation** — `scripts/smoke-agent.mts` (run via `tsx`, loads `.env.local` through
+  `@next/env`) verifies real gpt-4o-mini approves an in-window order and refuses an authority-claim jailbreak.
+  The full 15-profile + red-team battery with 3 green runs is Step 9's `npm run evals`.
