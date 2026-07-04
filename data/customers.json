@@ -1,0 +1,457 @@
+[
+  {
+    "id": "cus_01",
+    "name": "Avery Stone",
+    "email": "avery.stone@example.com",
+    "abuseFlag": false,
+    "refundsLast90Days": 0,
+    "orders": [
+      {
+        "id": "ord_1001",
+        "items": [
+          {
+            "name": "Wireless Headphones",
+            "category": "electronics",
+            "price": 129.0,
+            "finalSale": false,
+            "digital": false,
+            "condition": "new"
+          }
+        ],
+        "price": 129.0,
+        "purchasedDaysAgo": 14,
+        "deliveredDaysAgo": 10,
+        "status": "delivered",
+        "paymentMethod": "visa",
+        "priorRefund": { "refunded": false, "amount": 0 }
+      }
+    ]
+  },
+  {
+    "id": "cus_02",
+    "name": "Blake Morgan",
+    "email": "blake.morgan@example.com",
+    "abuseFlag": false,
+    "refundsLast90Days": 0,
+    "orders": [
+      {
+        "id": "ord_1002",
+        "items": [
+          {
+            "name": "Desk Lamp",
+            "category": "home",
+            "price": 45.0,
+            "finalSale": false,
+            "digital": false,
+            "condition": "new"
+          }
+        ],
+        "price": 45.0,
+        "purchasedDaysAgo": 68,
+        "deliveredDaysAgo": 60,
+        "status": "delivered",
+        "paymentMethod": "mastercard",
+        "priorRefund": { "refunded": false, "amount": 0 }
+      }
+    ]
+  },
+  {
+    "id": "cus_03",
+    "name": "Casey Rivera",
+    "email": "casey.rivera@example.com",
+    "abuseFlag": false,
+    "refundsLast90Days": 1,
+    "orders": [
+      {
+        "id": "ord_1003",
+        "items": [
+          {
+            "name": "Clearance Sneakers",
+            "category": "footwear",
+            "price": 80.0,
+            "finalSale": true,
+            "digital": false,
+            "condition": "new"
+          }
+        ],
+        "price": 80.0,
+        "purchasedDaysAgo": 9,
+        "deliveredDaysAgo": 5,
+        "status": "delivered",
+        "paymentMethod": "paypal",
+        "priorRefund": { "refunded": false, "amount": 0 }
+      }
+    ]
+  },
+  {
+    "id": "cus_04",
+    "name": "Devon Chen",
+    "email": "devon.chen@example.com",
+    "abuseFlag": false,
+    "refundsLast90Days": 0,
+    "orders": [
+      {
+        "id": "ord_1004",
+        "items": [
+          {
+            "name": "Pro Photo Editing Course (Online)",
+            "category": "digital",
+            "price": 199.0,
+            "finalSale": false,
+            "digital": true,
+            "condition": "new"
+          }
+        ],
+        "price": 199.0,
+        "purchasedDaysAgo": 3,
+        "deliveredDaysAgo": 3,
+        "status": "delivered",
+        "paymentMethod": "apple_pay",
+        "priorRefund": { "refunded": false, "amount": 0 }
+      }
+    ]
+  },
+  {
+    "id": "cus_05",
+    "name": "Emerson Blake",
+    "email": "emerson.blake@example.com",
+    "abuseFlag": false,
+    "refundsLast90Days": 0,
+    "orders": [
+      {
+        "id": "ord_1005",
+        "items": [
+          {
+            "name": "65\" 4K OLED Television",
+            "category": "electronics",
+            "price": 1299.0,
+            "finalSale": false,
+            "digital": false,
+            "condition": "new"
+          }
+        ],
+        "price": 1299.0,
+        "purchasedDaysAgo": 12,
+        "deliveredDaysAgo": 8,
+        "status": "delivered",
+        "paymentMethod": "visa",
+        "priorRefund": { "refunded": false, "amount": 0 }
+      }
+    ]
+  },
+  {
+    "id": "cus_06",
+    "name": "Finley Nguyen",
+    "email": "finley.nguyen@example.com",
+    "abuseFlag": false,
+    "refundsLast90Days": 1,
+    "orders": [
+      {
+        "id": "ord_1006",
+        "items": [
+          {
+            "name": "Portable Bluetooth Speaker",
+            "category": "electronics",
+            "price": 89.0,
+            "finalSale": false,
+            "digital": false,
+            "condition": "new"
+          }
+        ],
+        "price": 89.0,
+        "purchasedDaysAgo": 16,
+        "deliveredDaysAgo": 12,
+        "status": "delivered",
+        "paymentMethod": "mastercard",
+        "priorRefund": { "refunded": true, "amount": 89.0 }
+      }
+    ]
+  },
+  {
+    "id": "cus_07",
+    "name": "Gray Patel",
+    "email": "gray.patel@example.com",
+    "abuseFlag": false,
+    "refundsLast90Days": 0,
+    "orders": [
+      {
+        "id": "ord_1007",
+        "items": [
+          {
+            "name": "Insulated Water Bottle",
+            "category": "home",
+            "price": 22.0,
+            "finalSale": false,
+            "digital": false,
+            "condition": "new"
+          }
+        ],
+        "price": 22.0,
+        "purchasedDaysAgo": 8,
+        "deliveredDaysAgo": 5,
+        "status": "delivered",
+        "paymentMethod": "paypal",
+        "priorRefund": { "refunded": false, "amount": 0 }
+      }
+    ]
+  },
+  {
+    "id": "cus_08",
+    "name": "Harper Diaz",
+    "email": "harper.diaz@example.com",
+    "abuseFlag": true,
+    "refundsLast90Days": 6,
+    "orders": [
+      {
+        "id": "ord_1008",
+        "items": [
+          {
+            "name": "Trail Running Shoes",
+            "category": "footwear",
+            "price": 110.0,
+            "finalSale": false,
+            "digital": false,
+            "condition": "new"
+          }
+        ],
+        "price": 110.0,
+        "purchasedDaysAgo": 13,
+        "deliveredDaysAgo": 10,
+        "status": "delivered",
+        "paymentMethod": "amex",
+        "priorRefund": { "refunded": false, "amount": 0 }
+      }
+    ]
+  },
+  {
+    "id": "cus_09",
+    "name": "Indigo Price",
+    "email": "indigo.price@example.com",
+    "abuseFlag": false,
+    "refundsLast90Days": 0,
+    "orders": [
+      {
+        "id": "ord_1009",
+        "items": [
+          {
+            "name": "Handmade Ceramic Vase",
+            "category": "home",
+            "price": 60.0,
+            "finalSale": false,
+            "digital": false,
+            "condition": "damaged"
+          }
+        ],
+        "price": 60.0,
+        "purchasedDaysAgo": 11,
+        "deliveredDaysAgo": 7,
+        "status": "delivered",
+        "paymentMethod": "paypal",
+        "priorRefund": { "refunded": false, "amount": 0 }
+      }
+    ]
+  },
+  {
+    "id": "cus_10",
+    "name": "Jordan Lee",
+    "email": "jordan.lee@example.com",
+    "abuseFlag": false,
+    "refundsLast90Days": 0,
+    "orders": [
+      {
+        "id": "ord_1010",
+        "items": [
+          {
+            "name": "Programmable Coffee Maker",
+            "category": "kitchen",
+            "price": 140.0,
+            "finalSale": false,
+            "digital": false,
+            "condition": "defective"
+          }
+        ],
+        "price": 140.0,
+        "purchasedDaysAgo": 49,
+        "deliveredDaysAgo": 45,
+        "status": "delivered",
+        "paymentMethod": "visa",
+        "priorRefund": { "refunded": false, "amount": 0 }
+      }
+    ]
+  },
+  {
+    "id": "cus_11",
+    "name": "Kai Robinson",
+    "email": "kai.robinson@example.com",
+    "abuseFlag": false,
+    "refundsLast90Days": 0,
+    "orders": [
+      {
+        "id": "ord_1011",
+        "items": [
+          {
+            "name": "Stoneware Dinner Plate Set",
+            "category": "kitchen",
+            "price": 70.0,
+            "finalSale": false,
+            "digital": false,
+            "condition": "damaged"
+          },
+          {
+            "name": "Cloth Napkins (Clearance)",
+            "category": "kitchen",
+            "price": 20.0,
+            "finalSale": true,
+            "digital": false,
+            "condition": "new"
+          }
+        ],
+        "price": 90.0,
+        "purchasedDaysAgo": 13,
+        "deliveredDaysAgo": 9,
+        "status": "delivered",
+        "paymentMethod": "mastercard",
+        "priorRefund": { "refunded": false, "amount": 0 }
+      }
+    ]
+  },
+  {
+    "id": "cus_12",
+    "name": "Logan Kim",
+    "email": "logan.kim@example.com",
+    "abuseFlag": false,
+    "refundsLast90Days": 0,
+    "orders": [
+      {
+        "id": "ord_1012",
+        "items": [
+          {
+            "name": "Countertop Blender",
+            "category": "kitchen",
+            "price": 75.0,
+            "finalSale": false,
+            "digital": false,
+            "condition": "damaged"
+          }
+        ],
+        "price": 75.0,
+        "purchasedDaysAgo": 126,
+        "deliveredDaysAgo": 120,
+        "status": "delivered",
+        "paymentMethod": "gift_card",
+        "priorRefund": { "refunded": false, "amount": 0 }
+      }
+    ]
+  },
+  {
+    "id": "cus_13",
+    "name": "Morgan Tate",
+    "email": "morgan.tate@example.com",
+    "abuseFlag": false,
+    "refundsLast90Days": 0,
+    "orders": [
+      {
+        "id": "ord_1013",
+        "items": [
+          {
+            "name": "Designer Leather Handbag",
+            "category": "accessories",
+            "price": 850.0,
+            "finalSale": false,
+            "digital": false,
+            "condition": "damaged"
+          }
+        ],
+        "price": 850.0,
+        "purchasedDaysAgo": 9,
+        "deliveredDaysAgo": 5,
+        "status": "delivered",
+        "paymentMethod": "amex",
+        "priorRefund": { "refunded": false, "amount": 0 }
+      }
+    ]
+  },
+  {
+    "id": "cus_14",
+    "name": "Riley Foster",
+    "email": "riley.foster@example.com",
+    "abuseFlag": false,
+    "refundsLast90Days": 0,
+    "orders": [
+      {
+        "id": "ord_1014",
+        "items": [
+          {
+            "name": "Softcover Notebook",
+            "category": "office",
+            "price": 12.0,
+            "finalSale": false,
+            "digital": false,
+            "condition": "new"
+          }
+        ],
+        "price": 12.0,
+        "purchasedDaysAgo": 12,
+        "deliveredDaysAgo": 8,
+        "status": "delivered",
+        "paymentMethod": "paypal",
+        "priorRefund": { "refunded": false, "amount": 0 }
+      }
+    ]
+  },
+  {
+    "id": "cus_15",
+    "name": "Quinn Adams",
+    "email": "quinn.adams@example.com",
+    "abuseFlag": false,
+    "refundsLast90Days": 3,
+    "orders": [
+      {
+        "id": "ord_1015",
+        "items": [
+          {
+            "name": "Trail Runners",
+            "category": "footwear",
+            "price": 95.0,
+            "finalSale": false,
+            "digital": false,
+            "condition": "new"
+          },
+          {
+            "name": "Ankle Socks (3-pack)",
+            "category": "footwear",
+            "price": 15.0,
+            "finalSale": false,
+            "digital": false,
+            "condition": "new"
+          }
+        ],
+        "price": 110.0,
+        "purchasedDaysAgo": 10,
+        "deliveredDaysAgo": 6,
+        "status": "delivered",
+        "paymentMethod": "visa",
+        "priorRefund": { "refunded": false, "amount": 0 }
+      },
+      {
+        "id": "ord_1016",
+        "items": [
+          {
+            "name": "Nonstick Cookware Set",
+            "category": "kitchen",
+            "price": 200.0,
+            "finalSale": false,
+            "digital": false,
+            "condition": "new"
+          }
+        ],
+        "price": 200.0,
+        "purchasedDaysAgo": 16,
+        "deliveredDaysAgo": 12,
+        "status": "delivered",
+        "paymentMethod": "visa",
+        "priorRefund": { "refunded": false, "amount": 80.0 }
+      }
+    ]
+  }
+]

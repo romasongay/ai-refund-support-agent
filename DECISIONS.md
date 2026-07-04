@@ -46,3 +46,22 @@ keep moving"). Format: `[Dn] Step N — decision — rationale`.
   the prior mock data is NOT reusable as-is (hardcoded dates, missing fields, 4 missing edge cases).
 - **[D11] Pre-empt prior-build error ERR-001** — In Step 2, numeric fields like an order return-window
   are validated with Zod `.min(0)` (not `.positive()`): digital non-refundable orders legitimately use 0.
+
+## Step 2 — Mock data & policy
+
+- **[D12] Dates stored as relative offsets** — `data/customers.json` stores `purchasedDaysAgo` /
+  `deliveredDaysAgo` (integers), never absolute calendar dates. `lib/db.ts` materializes concrete ISO
+  dates against an **injectable per-session clock** (frozen at session creation). Satisfies the Step 2
+  adversarial requirement "dates relative to runtime (computed offsets)"; verified by a test that shows
+  window classification is invariant to the run date.
+- **[D13] Item-level eligibility model** — each order carries an `items[]` array (per-item `finalSale`,
+  `digital`, `condition`) with `price` = sum of item prices. This makes genuine partial refunds
+  expressible (some items eligible, others not). The policy is a numbered 9-clause scheme (R1–R9) with an
+  explicit **decision precedence** so every profile resolves to exactly one outcome. Damaged/defective
+  (R7) has a 90-day window overriding R1/R2; partial prior refunds refund only the remainder (R5/R9).
+- **[D14] Scenario oracle + independent derivation** — `data/refund-scenarios.md` records each profile's
+  unambiguous expected outcome + clause (the oracle Step 3's engine must reproduce). The sweep proved
+  unambiguity by having an agent re-derive all outcomes from **policy + data alone** and diffing against
+  the oracle (0 mismatches across outcomes, amounts, and clause citations).
+- **[D15] 15 profiles, 16 orders** — exactly 15 customer profiles (spec requirement); one customer
+  (cus_15) has a second order to exercise the partial-prior-refund path without exceeding 15 profiles.
