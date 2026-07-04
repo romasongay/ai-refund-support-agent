@@ -96,3 +96,51 @@ that the four previously-misfiring declines do **not** cite R5, plus a final pol
 - 🟢 Policy audit: no findings. · 🟢 Data/db audit: no findings.
 
 **Result: CLEAN — zero findings.** Exit rule met (3 sweeps, most recent clean). Step 2 closed.
+
+---
+
+## Step 3 — Sweep 1
+
+**Mechanical gate:** `tsc` 0 · ESLint 0 · Vitest **62/62** (config 6 + db 23 + events 4 + tools 29 —
+the full 16-request eligibility oracle, `process_refund` guard, double-refund/mismatch/junk attacks,
+event emission, OpenAI schema export) · `next build` OK.
+
+**Adversarial review:** a 3-lens hostile workflow (eligibility-fidelity / security-guards /
+event-robustness), each finding adversarially verified. 8 raw → **6 confirmed** (deduping to 4 real
+defects; 2 findings correctly ruled out — a latent unbounded session-Map deferred to Step 5's reset,
+and a non-reachable over-refund in `markOrderRefunded`).
+
+- 🟠 **[S3-F1]** `escalate_to_human` accepted **empty clauses** (`.default([])`) while `deny_refund`
+  required `.min(1)` — an escalation is a refund decision and must cite a clause. → **FIXED**: escalate
+  clauses `.min(1)`; also floored `DecisionPayloadSchema.clauses` to `.min(1)` as a structural backstop so
+  **no** decision event (approved/denied/escalated) can ever be emitted without a citation. + test.
+- 🟠 **[S3-F2]** `priorRefund.refunded` and `.amount` could **drift** (no cross-field validation); a
+  malformed row `{refunded:true, amount:0}` would wrongly decline (R5) a legitimate refund. → **FIXED**:
+  added an `OrderFixtureSchema` refine tying `refunded === (amount>0 && amount>=price)` (fail-fast at load),
+  and the engine's R5 check now derives from amount vs price (single source of truth). + test.
+- 🟠 **[S3-F3]** `deny_refund` / `escalate_to_human` did **no ownership check** — a decision could be
+  recorded against another customer's order (audit misattribution), e.g. deny cus_01's order under cus_07.
+  → **FIXED**: both now cross-check `getOrder` ownership and refuse (recorded/escalated:false) for unknown
+  or non-owned orders. + test.
+- 🔴 **[S3-F4]** `executeTool` **threw** a ZodError on a blank `sessionId` (the pre-session `emit` calls ran
+  outside the try/catch and `publish` `.parse`s `sessionId.min(1)`), violating its "never throws" contract.
+  → **FIXED**: guard a blank/whitespace `sessionId` at the top → `{ ok:false, error:"unknown_session" }`. + test.
+
+## Step 3 — Sweep 2
+
+Re-ran the gate after fixes (`tsc`/ESLint 0, Vitest **64/64**) and re-ran an adversarial re-review of the
+four fixes (correctness / regressions / new holes) across two lenses with verification.
+**Result: 0 findings** — both lenses confirmed all four fixes correct, complete, and regression-free (the
+amount-derived R5 still declines cus_06 and correctly leaves the partial-prior cus_15/ord_1016 approvable;
+the ownership refusal blocks no legitimate owned-order flow; the `.min(1)` clause floor never throws because
+every decision path supplies clauses).
+
+## Step 3 — Sweep 3 (clean)
+
+Final full sweep: `prettier`/`tsc`/ESLint 0 · Vitest **64/64** · `next build` OK · plus a fresh, independent
+hostile confirmation of all six deliverables and the engine-vs-policy precedence match.
+- 🟢 All six Step-3 deliverables present and correct; the engine follows R6→R8→R4→R5→per-item(R7>R2>R3>R1)→aggregate exactly.
+- 🟢 The four Sweep-1 fixes verified still-correct; epsilon/rounding edges hand-traced (no micro-approvals; R5 derived from amount).
+- 🟢 Reviewer verdict: **CLEAN — no findings**.
+
+**Result: CLEAN — zero findings.** Exit rule met (3 sweeps, most recent clean). Step 3 closed.

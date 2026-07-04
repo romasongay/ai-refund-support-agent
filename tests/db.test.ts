@@ -10,6 +10,7 @@ import {
   getValidatedFixture,
   listCustomers,
   markOrderRefunded,
+  OrderFixtureSchema,
   resetAllSessions,
   resetSession,
   sessionCount,
@@ -40,6 +41,46 @@ describe("fixture integrity", () => {
     const emails = getValidatedFixture().map((c) => c.email.toLowerCase());
     expect(new Set(emails).size).toBe(emails.length);
     for (const e of emails) expect(e).toMatch(/^[^@\s]+@[^@\s]+\.[^@\s]+$/);
+  });
+
+  it("rejects a prior-refund flag that disagrees with the amount (cross-field refine)", () => {
+    const baseOrder = {
+      id: "ord_test",
+      items: [
+        {
+          name: "Thing",
+          category: "misc",
+          price: 100,
+          finalSale: false,
+          digital: false,
+          condition: "new",
+        },
+      ],
+      price: 100,
+      purchasedDaysAgo: 5,
+      deliveredDaysAgo: 3,
+      status: "delivered",
+      paymentMethod: "visa",
+    };
+    // refunded=true but amount=0 → inconsistent → rejected.
+    expect(
+      OrderFixtureSchema.safeParse({ ...baseOrder, priorRefund: { refunded: true, amount: 0 } })
+        .success,
+    ).toBe(false);
+    // refunded=false but amount=full price → inconsistent → rejected.
+    expect(
+      OrderFixtureSchema.safeParse({ ...baseOrder, priorRefund: { refunded: false, amount: 100 } })
+        .success,
+    ).toBe(false);
+    // Consistent pairs pass.
+    expect(
+      OrderFixtureSchema.safeParse({ ...baseOrder, priorRefund: { refunded: true, amount: 100 } })
+        .success,
+    ).toBe(true);
+    expect(
+      OrderFixtureSchema.safeParse({ ...baseOrder, priorRefund: { refunded: false, amount: 40 } })
+        .success,
+    ).toBe(true);
   });
 });
 

@@ -65,3 +65,20 @@ keep moving"). Format: `[Dn] Step N — decision — rationale`.
   the oracle (0 mismatches across outcomes, amounts, and clause citations).
 - **[D15] 15 profiles, 16 orders** — exactly 15 customer profiles (spec requirement); one customer
   (cus_15) has a second order to exercise the partial-prior-refund path without exceeding 15 profiles.
+
+## Step 3 — Tools layer & event bus
+
+- **[D16] Tool architecture** — each tool is a pure `ToolDef` module (Zod input + output schemas; JSON
+  schema auto-derived via Zod 4's `z.toJSONSchema`, `$schema` stripped, for the OpenAI tools array). A
+  single `executeTool` executor validates I/O and publishes `tool_call` / `tool_result` / `decision` /
+  `error` events — it is the ONE entry point shared by the text agent (Step 4) and the voice agent (Step 8),
+  so reasoning events flow identically for both transports.
+- **[D17] Money decision lives in code, guarded twice** — `check_refund_eligibility` is the deterministic
+  engine; `process_refund` re-runs it internally and refuses anything not approved (code-enforced, not
+  prompt-based), taking only `customerId`+`orderId` (no caller-supplied amount) so the payout can't be tampered.
+- **[D18] Citations enforced structurally** — the verdict, `deny_refund`/`escalate_to_human` inputs, and
+  `DecisionPayload` all use `clauses: .min(1)`, so no verdict or decision event can exist without a clause.
+- **[D19] Guards from the Sweep** — `deny`/`escalate` refuse decisions on non-owned orders; `priorRefund.refunded`
+  is a validated cache of `amount>0 && amount>=price` (cross-field refine) and R5 is derived from the amount;
+  `executeTool` never throws (blank sessionId guarded). Event bus caps per-session history at 5000 and supports a
+  firehose; global reset wiring is deferred to Step 5's `/api/reset`.

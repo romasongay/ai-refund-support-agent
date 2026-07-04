@@ -37,7 +37,7 @@ export type PaymentMethod = (typeof PAYMENT_METHODS)[number];
 // Fixture schemas (raw, with relative date offsets)
 // ---------------------------------------------------------------------------
 
-const MONEY_EPSILON = 0.005;
+export const MONEY_EPSILON = 0.005;
 
 export const OrderItemSchema = z.object({
   name: z.string().min(1),
@@ -75,7 +75,18 @@ export const OrderFixtureSchema = z
   .refine((o) => o.priorRefund.amount <= o.price + MONEY_EPSILON, {
     message: "priorRefund.amount cannot exceed the order price",
     path: ["priorRefund", "amount"],
-  });
+  })
+  // The `refunded` flag must be a faithful cache of (amount > 0 && amount >= price): the flag and the
+  // amount can never disagree, so the engine can trust either. Malformed rows fail fast at load.
+  .refine(
+    (o) =>
+      o.priorRefund.refunded ===
+      (o.priorRefund.amount > 0 && o.priorRefund.amount >= o.price - MONEY_EPSILON),
+    {
+      message: "priorRefund.refunded must equal (amount > 0 && amount >= price)",
+      path: ["priorRefund", "refunded"],
+    },
+  );
 
 export const CustomerFixtureSchema = z.object({
   id: z.string().min(1),
