@@ -22,3 +22,60 @@
 body {
   font-family: var(--font-sans), ui-sans-serif, system-ui, sans-serif;
 }
+
+/* Scoped styling for rendered markdown in assistant bubbles. Code fences scroll horizontally so
+   degenerate LLM output can never break the bubble/page layout. */
+.markdown > :first-child {
+  margin-top: 0;
+}
+.markdown > :last-child {
+  margin-bottom: 0;
+}
+.markdown p {
+  margin: 0.5em 0;
+}
+.markdown ul,
+.markdown ol {
+  margin: 0.5em 0;
+  padding-left: 1.25em;
+}
+.markdown ul {
+  list-style: disc;
+}
+.markdown ol {
+  list-style: decimal;
+}
+.markdown li {
+  margin: 0.15em 0;
+}
+.markdown a {
+  text-decoration: underline;
+}
+.markdown strong {
+  font-weight: 600;
+}
+.markdown code {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 0.9em;
+  background: rgba(0, 0, 0, 0.06);
+  padding: 0.1em 0.3em;
+  border-radius: 0.25rem;
+}
+.markdown pre {
+  margin: 0.5em 0;
+  padding: 0.75em;
+  border-radius: 0.5rem;
+  background: rgba(0, 0, 0, 0.06);
+  overflow-x: auto;
+  max-width: 100%;
+}
+.markdown pre code {
+  background: transparent;
+  padding: 0;
+}
+@media (prefers-color-scheme: dark) {
+  .markdown code,
+  .markdown pre {
+    background: rgba(255, 255, 255, 0.09);
+  }
+}

@@ -113,3 +113,19 @@ keep moving"). Format: `[Dn] Step N — decision — rationale`.
 - **[D26] Two-layer verification** — a completer test-seam (`__setDefaultCompleter`) makes `/api/chat` testable
   offline (105 tests), and `scripts/smoke-api.mts` validates the real Next 16 SSE-over-HTTP + agent stack that
   the unit tests (which call handlers directly) bypass.
+
+## Step 6 — Customer chat UI
+
+- **[D27] Structure** — `app/page.tsx` renders a client `CustomerChat`; presentational pieces (`message-bubble`
+  with react-markdown, `decision-banner`, `profile-selector`) + a client lib (`api`/`streamChat`, a pure `SseParser`,
+  friendly `labels`). `import type` from `lib/events` keeps `node:crypto` out of the browser bundle.
+- **[D28] Streaming UX** — the chat consumes the `/api/chat` SSE: `tool_call` → a friendly activity indicator
+  ("Checking your order…"), `decision` → a prominent alert banner, `done` → the reply bubble. **Send + textarea are
+  disabled while streaming**, which makes send-during-streaming and button-spam impossible client-side; each turn
+  uses its own AbortController (aborted on unmount/switch/reset). Reset/Switch controls; error toast + Retry.
+- **[D29] Markdown safety** — react-markdown's default (no `rehype-raw`) is XSS-safe; scoped `.markdown` CSS bounds
+  code fences (`overflow-x:auto`, `max-width:100%`) so degenerate LLM output can never break the bubble/page layout.
+- **[D30] Verification + persistence** — React Testing Library unit tests + a Playwright browser check
+  (`scripts/ui-check.mts`, system Chrome, no download) exercise the adversarial focus (send-during-streaming,
+  5000-char message, mobile overflow, markdown). **No client persistence**: a refresh returns to the profile
+  selector (the server session persists in memory), which is graceful, not a break.

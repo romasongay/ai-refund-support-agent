@@ -223,3 +223,41 @@ Final full sweep: `tsc`/ESLint 0 · Vitest **105/105** · `next build` OK (the f
 `/api/events` backfilled; `/api/reset` ok).
 
 **Result: CLEAN — zero findings.** Exit rule met (3 sweeps, most recent clean). Step 5 closed.
+
+---
+
+## Step 6 — Sweep 1
+
+**Mechanical gate:** `tsc` 0 · ESLint 0 · Vitest **112/112** (+7 UI tests: SSE parser incl. multi-line /
+split-chunk / heartbeat, tool & decision labels, MessageBubble markdown → bold/inline-code/fenced-block,
+DecisionBanner outcome/amount/clauses) · `next build` OK (`/` prerenders + hydrates; react-markdown bundles).
+
+**Browser UI checks** (`scripts/ui-check.mts`, Playwright + system Chrome, against a live server) — all pass:
+- profile selector renders; selecting a profile enters the chat;
+- real approve flow → the assistant reply + a green "Refund approved · $129.00" decision banner (R1);
+- **Send + textarea disabled while streaming** (send-during-streaming and button-spam are prevented);
+- a **5,000-char** message renders without horizontal overflow;
+- **mobile (375px)**: no horizontal overflow on the chat or the selector.
+Screenshots reviewed for polish — clean bubbles, markdown-rendered reply, prominent decision banner.
+
+**Adversarial review:** 2-lens hostile workflow (chat-logic/state/streaming + rendering/a11y/spec), verified.
+4 raw → **2 confirmed** (both a11y; 2 ruled out):
+
+- 🟡 **[S6-F1]** The message `<textarea>` had no accessible name (only a placeholder — invalid as an accessible
+  name per WCAG 4.1.2). → **FIXED**: added `aria-label="Message to the refund agent"`.
+- 🟡 **[S6-F2]** The decision banner used `role="status"` (polite) but is conditionally mounted, so the single most
+  important outcome could go unannounced by screen readers (and it was inconsistent with the error toast's
+  `role="alert"`). → **FIXED**: changed to `role="alert"` (assertive, reliably announced on insertion) + a test.
+
+## Step 6 — Sweep 2
+
+Re-ran the gate after the fixes (`tsc`/ESLint 0, Vitest **112/112**) and a hostile re-review confirming both a11y
+fixes and a fresh pass (state/abort, SSE parsing, markdown XSS-safety, error handling). **Result: 0 findings.**
+
+## Step 6 — Sweep 3 (clean)
+
+Final full sweep: `tsc`/ESLint 0 · Vitest **112/112** · `next build` OK · Playwright UI check re-run — all six
+checks pass after the a11y edits (selector, approve flow + decision banner, send-lockout, 5000-char no overflow,
+mobile no overflow).
+
+**Result: CLEAN — zero findings.** Exit rule met (3 sweeps, most recent clean). Step 6 closed.
