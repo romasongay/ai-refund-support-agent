@@ -283,6 +283,40 @@ describe("terminal tools require citations, verify ownership, and emit decisions
     // No misattributed decision reached the audit stream.
     expect(eventsOfType(session.id, "decision")).toHaveLength(0);
   });
+
+  it("does NOT let the model fabricate an escalation clause/threshold — the engine's rationale wins", async () => {
+    // Casey's ord_1003 is FINAL SALE (R2), not high-value. The model tries to escalate it citing R4 / >$500.
+    const r = ok(
+      await executeTool(session.id, "escalate_to_human", {
+        customerId: "cus_03",
+        orderId: "ord_1003",
+        clauses: ["R4"],
+        reason: "This order exceeds $500 (R4).",
+      }),
+    ) as { escalated: boolean; clauses: string[]; reason: string };
+    expect(r.escalated).toBe(true);
+    // The result carries the ENGINE's clause (R2), never the fabricated R4 or an invented $ threshold.
+    expect(r.clauses).toEqual(["R2"]);
+    expect(r.reason).not.toMatch(/R4|\$?500/);
+    for (const d of eventsOfType(session.id, "decision")) {
+      expect(d.payload.clauses).not.toContain("R4");
+    }
+  });
+
+  it("deny_refund records the engine's clauses/reason, not a model-supplied clause", async () => {
+    const d = ok(
+      await executeTool(session.id, "deny_refund", {
+        customerId: "cus_03",
+        orderId: "ord_1003",
+        clauses: ["R1"], // wrong on purpose
+        reason: "made-up reason",
+      }),
+    ) as { recorded: boolean; clauses: string[]; reason: string };
+    expect(d.recorded).toBe(true);
+    expect(d.clauses).toEqual(["R2"]); // engine wins over the model's R1
+    expect(d.reason).not.toBe("made-up reason");
+    expect(d.reason).toMatch(/R2/);
+  });
 });
 
 describe("executor observability + robustness", () => {

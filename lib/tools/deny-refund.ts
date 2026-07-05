@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { getCustomer, getOrder } from "@/lib/db";
 import type { DecisionPayload } from "@/lib/events";
+import { evaluateEligibility } from "@/lib/tools/check-refund-eligibility";
 import { ClauseSchema, defineTool } from "@/lib/tools/types";
 
 const inputSchema = z.object({
@@ -25,7 +26,7 @@ type Output = z.infer<typeof outputSchema>;
 export const denyRefundTool = defineTool<Input, Output>({
   name: "deny_refund",
   description:
-    'Record a refund denial for an order the customer owns. Requires at least one cited policy clause (e.g. ["R1"]) and a short reason. Refuses to record a denial for an unknown order or an order that belongs to a different customer.',
+    'Record a refund denial for an order the customer owns. Requires at least one cited policy clause (e.g. ["R1"]) and a short reason. The cited clauses and the recorded reason are taken from the deterministic policy engine for that order, not from your input. Refuses to record a denial for an unknown order or an order that belongs to a different customer.',
   inputSchema,
   outputSchema,
   run: (ctx, input) => {
@@ -42,7 +43,10 @@ export const denyRefundTool = defineTool<Input, Output>({
     if (!requester || found.customer.id !== requester.id) {
       return { recorded: false, refusedReason: "not_owned_by_customer", ...base };
     }
-    return { recorded: true, ...base };
+    // Authoritative rationale: the cited clauses + the recorded reason come from the deterministic engine
+    // for THIS order — never from the model — so a denial can never cite a clause the policy didn't produce.
+    const verdict = evaluateEligibility(ctx, input.customerId, input.orderId);
+    return { recorded: true, ...base, clauses: verdict.clauses, reason: verdict.reasoning };
   },
   toDecision: (_input, output): DecisionPayload | null => {
     if (!output.recorded) return null;
