@@ -159,15 +159,23 @@ export function EventRow({ event }: { event: ReasoningEvent }) {
         </Row>
       );
     }
-    case "decision":
+    case "decision": {
+      // Tint by outcome so denied/escalated rows match their dots + counters (not always green).
+      const tone: Tone =
+        event.payload.outcome === "approved"
+          ? "emerald"
+          : event.payload.outcome === "denied"
+            ? "rose"
+            : "amber";
       return (
-        <Row tone="emerald" time={time} prominent title={`Decision · ${event.payload.outcome}`}>
+        <Row tone={tone} time={time} prominent title={`Decision · ${event.payload.outcome}`}>
           <p className="text-xs break-words text-zinc-700 dark:text-zinc-200">
             {event.payload.summary}
           </p>
           <Clauses clauses={event.payload.clauses} amount={event.payload.amount} />
         </Row>
       );
+    }
     case "error":
       return (
         <Row tone="rose" time={time} prominent title="Error">

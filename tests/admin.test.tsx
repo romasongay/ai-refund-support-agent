@@ -84,6 +84,19 @@ describe("EventRow renders each type distinctly", () => {
     expect(c.textContent).toContain("$129.00");
   });
 
+  it("decision → row tinted by outcome (approved=emerald, denied=rose, escalated=amber) [M1]", () => {
+    const tone = (outcome: string) => {
+      const c = rowOf("decision", { outcome, clauses: ["R1"], summary: "x" });
+      const row = [...c.querySelectorAll("div")].find((d) =>
+        (d.className as string).includes("border-l-4"),
+      );
+      return (row?.className as string) ?? "";
+    };
+    expect(tone("approved")).toContain("emerald");
+    expect(tone("denied")).toContain("rose");
+    expect(tone("escalated")).toContain("amber");
+  });
+
   it("error → message + where", () => {
     const c = rowOf("error", { message: "kaboom", where: "agent-loop" });
     expect(c.textContent).toContain("Error");
