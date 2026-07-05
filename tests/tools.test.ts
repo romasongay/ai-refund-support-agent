@@ -333,3 +333,153 @@ describe("OpenAI tool export", () => {
     }
   });
 });
+
+describe("spoken / loose identifier resolution flows through the tools (Checkpoint B — voice)", () => {
+  it("resolves a spoken order id so eligibility approves (the reported voice bug)", () => {
+    // Transcription yields "ORD1001"/"1001"/"order 1001" instead of the stored "ord_1001".
+    for (const spoken of ["ORD1001", "ord-1001", "1001", "order 1001"]) {
+      const v = evaluateEligibility(ctx(), "cus_01", spoken);
+      expect(v.outcome).toBe("approve");
+      expect(v.refundAmount).toBe(129);
+      expect(v.clauses).toContain("R1");
+    }
+  });
+
+  it("get_order_details + check_refund_eligibility accept spoken order ids end-to-end", async () => {
+    const details = ok(
+      await executeTool(session.id, "get_order_details", { orderId: "ORD1001" }),
+    ) as { order?: { id?: string } };
+    expect(details.order?.id).toBe("ord_1001");
+
+    const verdict = ok(
+      await executeTool(session.id, "check_refund_eligibility", {
+        customerId: "cus_01",
+        orderId: "1,001",
+      }),
+    ) as { outcome: string };
+    expect(verdict.outcome).toBe("approve");
+  });
+
+  it("SECURITY: a spoken order id owned by someone else is still declined (R6), not fished", () => {
+    // cus_07 (Gray Patel) speaks cus_01's order in a loose form — ownership must still hold.
+    const v = evaluateEligibility(ctx(), "cus_07", "1001");
+    expect(v.outcome).toBe("decline");
+    expect(v.clauses).toContain("R6");
+  });
+
+  it("SECURITY: process_refund refuses a spoken cross-customer order (no payout)", async () => {
+    const res = ok(
+      await executeTool(session.id, "process_refund", { customerId: "cus_07", orderId: "ORD1001" }),
+    ) as ProcessResult;
+    expect(res.processed).toBe(false);
+    expect(res.outcome).toBe("refused");
+    // cus_01's order remains un-refunded.
+    expect(getOrder(session.id, "ord_1001")!.order.priorRefund.refunded).toBe(false);
+  });
+});
+
+describe("every resolved request emits exactly one decision event (F1 — code-level, both transports)", () => {
+  const decisions = () => eventsOfType(session.id, "decision").map((e) => e.payload);
+
+  it("a decline from check_refund_eligibility emits a denied decision (no deny_refund needed)", async () => {
+    await executeTool(session.id, "check_refund_eligibility", {
+      customerId: "cus_03",
+      orderId: "ord_1003",
+    });
+    const d = decisions();
+    expect(d).toHaveLength(1);
+    expect(d[0].outcome).toBe("denied");
+    expect(d[0].clauses).toContain("R2");
+    expect(d[0].orderId).toBe("ord_1003");
+  });
+
+  it("an escalate verdict emits an escalated decision", async () => {
+    await executeTool(session.id, "check_refund_eligibility", {
+      customerId: "cus_05",
+      orderId: "ord_1005",
+    });
+    const d = decisions();
+    expect(d).toHaveLength(1);
+    expect(d[0].outcome).toBe("escalated");
+    expect(d[0].clauses).toContain("R4");
+  });
+
+  it("approve emits NO decision from the eligibility check (process_refund emits the approval)", async () => {
+    await executeTool(session.id, "check_refund_eligibility", {
+      customerId: "cus_01",
+      orderId: "ord_1001",
+    });
+    expect(decisions()).toHaveLength(0);
+  });
+
+  it("dedupes: check(decline) then deny_refund yields exactly one decision", async () => {
+    await executeTool(session.id, "check_refund_eligibility", {
+      customerId: "cus_03",
+      orderId: "ord_1003",
+    });
+    await executeTool(session.id, "deny_refund", {
+      customerId: "cus_03",
+      orderId: "ord_1003",
+      clauses: ["R2"],
+      reason: "final sale",
+    });
+    expect(decisions()).toHaveLength(1);
+    expect(decisions()[0].outcome).toBe("denied");
+  });
+
+  it("normalizes a spoken order id in the emitted decision (canonical orderId)", async () => {
+    await executeTool(session.id, "check_refund_eligibility", {
+      customerId: "cus_03",
+      orderId: "ORD1003",
+    });
+    expect(decisions()[0].orderId).toBe("ord_1003");
+  });
+
+  it("a cross-customer spoken order still produces a denied R6 decision (scenario 2½)", async () => {
+    await executeTool(session.id, "check_refund_eligibility", {
+      customerId: "cus_07",
+      orderId: "1001",
+    });
+    const d = decisions();
+    expect(d).toHaveLength(1);
+    expect(d[0].outcome).toBe("denied");
+    expect(d[0].clauses).toContain("R6");
+    expect(d[0].orderId).toBe("ord_1001");
+  });
+});
+
+describe("decision dedupe survives an order-less / unresolvable escalation (S8-F9)", () => {
+  const decisions = () => eventsOfType(session.id, "decision").map((e) => e.payload);
+
+  it("account-level escalate_to_human (no orderId) after an escalate verdict does NOT double-emit", async () => {
+    await executeTool(session.id, "check_refund_eligibility", {
+      customerId: "cus_08",
+      orderId: "ord_1008",
+    }); // R8 abuse → escalated{ord_1008}
+    await executeTool(session.id, "escalate_to_human", {
+      customerId: "cus_08",
+      clauses: ["R8"],
+      reason: "account flagged for abuse",
+    }); // no orderId
+    const d = decisions();
+    expect(d).toHaveLength(1);
+    expect(d[0].outcome).toBe("escalated");
+    expect(d[0].orderId).toBe("ord_1008");
+  });
+
+  it("an unresolvable order id is dropped (no garbage key) and does not double-emit", async () => {
+    await executeTool(session.id, "check_refund_eligibility", {
+      customerId: "cus_05",
+      orderId: "ord_1005",
+    }); // R4 → escalated{ord_1005}
+    await executeTool(session.id, "escalate_to_human", {
+      customerId: "cus_05",
+      orderId: "my order", // unresolvable
+      clauses: ["R4"],
+      reason: "high value",
+    });
+    const d = decisions();
+    expect(d).toHaveLength(1);
+    expect(d[0].orderId).toBe("ord_1005");
+  });
+});

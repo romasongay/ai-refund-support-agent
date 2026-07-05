@@ -15,7 +15,10 @@ describe("config — cost guard", () => {
   });
 
   it("locks the voice model to the mini realtime tier", () => {
-    expect(MODELS.realtime).toBe("gpt-4o-mini-realtime-preview");
+    // GA mini realtime model served by /v1/realtime/calls (the beta gpt-4o-mini-realtime-preview
+    // mints a token but 404s on the actual call). Must stay a MINI tier per the cost guard.
+    expect(MODELS.realtime).toBe("gpt-realtime-mini");
+    expect(MODELS.realtime).toContain("mini");
   });
 });
 

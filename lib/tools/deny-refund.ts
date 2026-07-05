@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { getOrder } from "@/lib/db";
+import { getCustomer, getOrder } from "@/lib/db";
 import type { DecisionPayload } from "@/lib/events";
 import { ClauseSchema, defineTool } from "@/lib/tools/types";
 
@@ -35,10 +35,11 @@ export const denyRefundTool = defineTool<Input, Output>({
       clauses: input.clauses,
       reason: input.reason,
     };
-    // Ownership cross-check: a decision must never be misattributed to a non-owned order.
+    // Ownership cross-check (on RESOLVED ids): a decision must never be misattributed to a non-owned order.
     const found = getOrder(ctx.sessionId, input.orderId);
     if (!found) return { recorded: false, refusedReason: "order_not_found", ...base };
-    if (found.customer.id !== input.customerId) {
+    const requester = getCustomer(ctx.sessionId, input.customerId);
+    if (!requester || found.customer.id !== requester.id) {
       return { recorded: false, refusedReason: "not_owned_by_customer", ...base };
     }
     return { recorded: true, ...base };

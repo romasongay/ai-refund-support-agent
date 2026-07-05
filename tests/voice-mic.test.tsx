@@ -1,0 +1,204 @@
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { VoiceMic } from "@/components/voice/voice-mic";
+import { isVoiceSupported } from "@/lib/client/voice";
+
+/** A controllable RTCPeerConnection/data-channel stand-in so we can drive server events in a test. */
+class MockDC {
+  onopen: (() => void) | null = null;
+  onmessage: ((e: { data: string }) => void) | null = null;
+  readyState = "open";
+  sent: string[] = [];
+  send(s: string) {
+    this.sent.push(s);
+  }
+  close() {
+    this.readyState = "closed";
+  }
+}
+class MockPC {
+  static last: MockPC | null = null;
+  ontrack: unknown = null;
+  onconnectionstatechange: unknown = null;
+  connectionState = "new";
+  dc: MockDC | null = null;
+  constructor() {
+    MockPC.last = this;
+  }
+  addTrack() {}
+  createDataChannel() {
+    this.dc = new MockDC();
+    return this.dc;
+  }
+  async createOffer() {
+    return { sdp: "offer-sdp", type: "offer" };
+  }
+  async setLocalDescription() {}
+  async setRemoteDescription() {}
+  close() {}
+}
+
+const okJson = (data: unknown) => ({ ok: true, json: async () => data });
+
+afterEach(() => {
+  cleanup();
+  vi.unstubAllGlobals();
+  vi.restoreAllMocks();
+  if ("mediaDevices" in navigator) {
+    Object.defineProperty(navigator, "mediaDevices", { value: undefined, configurable: true });
+  }
+});
+
+const setMediaDevices = (getUserMedia: unknown) =>
+  Object.defineProperty(navigator, "mediaDevices", {
+    value: { getUserMedia },
+    configurable: true,
+  });
+
+describe("isVoiceSupported", () => {
+  it("is false when WebRTC (RTCPeerConnection) is unavailable", () => {
+    vi.stubGlobal("RTCPeerConnection", undefined);
+    expect(isVoiceSupported()).toBe(false);
+  });
+});
+
+describe("VoiceMic", () => {
+  it("degrades to a text-chat note when voice is unsupported", () => {
+    vi.stubGlobal("RTCPeerConnection", undefined);
+    render(<VoiceMic sessionId="s1" onTranscript={() => {}} />);
+    expect(screen.getByText(/isn.t supported/i)).toBeTruthy();
+    expect(screen.queryByRole("button")).toBeNull();
+  });
+
+  it("shows a helpful message when the microphone is blocked", async () => {
+    vi.stubGlobal("RTCPeerConnection", class {});
+    const getUserMedia = vi.fn().mockRejectedValue(new DOMException("blocked", "NotAllowedError"));
+    setMediaDevices(getUserMedia);
+
+    render(<VoiceMic sessionId="s1" onTranscript={() => {}} />);
+    fireEvent.click(screen.getByRole("button", { name: /start voice/i }));
+
+    expect(await screen.findByText(/microphone access was blocked/i)).toBeTruthy();
+    expect(getUserMedia).toHaveBeenCalledOnce();
+  });
+
+  it("keeps the retry affordance live after a failed start (regression: dead retry button)", async () => {
+    vi.stubGlobal("RTCPeerConnection", class {});
+    const getUserMedia = vi.fn().mockRejectedValue(new DOMException("blocked", "NotAllowedError"));
+    setMediaDevices(getUserMedia);
+
+    render(<VoiceMic sessionId="s1" onTranscript={() => {}} />);
+    fireEvent.click(screen.getByRole("button", { name: /start voice/i }));
+    await screen.findByText(/microphone access was blocked/i);
+    expect(getUserMedia).toHaveBeenCalledTimes(1);
+
+    // Tapping again must actually retry (not silently early-return on a stale ref).
+    fireEvent.click(screen.getByRole("button", { name: /start voice/i }));
+    await waitFor(() => expect(getUserMedia).toHaveBeenCalledTimes(2));
+  });
+
+  it("releases the microphone if the session is aborted mid-connect (regression: leaked hot mic)", async () => {
+    vi.stubGlobal("RTCPeerConnection", class {});
+    const stopSpy = vi.fn();
+    const fakeStream = { getTracks: () => [{ stop: stopSpy }] } as unknown as MediaStream;
+    let resolveGum: (s: MediaStream) => void = () => {};
+    const gumPromise = new Promise<MediaStream>((r) => {
+      resolveGum = r;
+    });
+    setMediaDevices(vi.fn().mockReturnValue(gumPromise));
+
+    const { unmount } = render(<VoiceMic sessionId="s1" onTranscript={() => {}} />);
+    fireEvent.click(screen.getByRole("button", { name: /start voice/i }));
+    await Promise.resolve(); // let start() park on the pending getUserMedia
+
+    unmount(); // aborts the in-flight session
+    resolveGum(fakeStream); // the mic resolves AFTER the abort…
+    await gumPromise;
+    await Promise.resolve();
+    await Promise.resolve();
+
+    // …and must be stopped rather than left hot.
+    expect(stopSpy).toHaveBeenCalled();
+  });
+
+  it("stays cancellable while connecting (regression: disabled button during connect)", async () => {
+    vi.stubGlobal("RTCPeerConnection", MockPC);
+    const stopSpy = vi.fn();
+    const fakeStream = { getTracks: () => [{ stop: stopSpy }] } as unknown as MediaStream;
+    setMediaDevices(vi.fn().mockResolvedValue(fakeStream));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockReturnValue(new Promise(() => {})), // token fetch hangs → stuck "connecting"
+    );
+
+    render(<VoiceMic sessionId="s1" onTranscript={() => {}} />);
+    fireEvent.click(screen.getByRole("button", { name: /start voice/i }));
+    await screen.findByText(/connecting/i);
+
+    const btn = screen.getByRole("button");
+    expect(btn.hasAttribute("disabled")).toBe(false); // user can still cancel
+
+    fireEvent.click(btn); // active → stop() → abort → mic released
+    await waitFor(() => expect(stopSpy).toHaveBeenCalled());
+  });
+
+  it("a server error event tears down the call and re-offers retry (regression: stuck listening)", async () => {
+    vi.stubGlobal("RTCPeerConnection", MockPC);
+    const stopSpy = vi.fn();
+    const fakeStream = { getTracks: () => [{ stop: stopSpy }] } as unknown as MediaStream;
+    setMediaDevices(vi.fn().mockResolvedValue(fakeStream));
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValueOnce(okJson({ value: "ek_x", expiresAt: 9_999_999_999, model: "m" })) // token
+        .mockResolvedValueOnce({ ok: true, text: async () => "answer-sdp" }), // SDP
+    );
+
+    render(<VoiceMic sessionId="s1" onTranscript={() => {}} />);
+    fireEvent.click(screen.getByRole("button", { name: /start voice/i }));
+    await waitFor(() => expect(MockPC.last?.dc).toBeTruthy());
+
+    act(() => MockPC.last!.dc!.onopen?.()); // → "listening" (active)
+    await screen.findByRole("button", { name: /stop voice/i });
+
+    await act(async () => {
+      MockPC.last!.dc!.onmessage?.({
+        data: JSON.stringify({ type: "error", error: { message: "session expired" } }),
+      });
+    });
+
+    expect(await screen.findByText(/session expired/i)).toBeTruthy();
+    expect(stopSpy).toHaveBeenCalled(); // torn down, not left hot
+    expect(screen.getByRole("button", { name: /start voice/i })).toBeTruthy(); // retry offered
+  });
+
+  it("surfaces the real upstream status + message when the SDP call fails (regression: opaque error)", async () => {
+    vi.stubGlobal("RTCPeerConnection", MockPC);
+    const stopSpy = vi.fn();
+    const fakeStream = { getTracks: () => [{ stop: stopSpy }] } as unknown as MediaStream;
+    setMediaDevices(vi.fn().mockResolvedValue(fakeStream));
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValueOnce(okJson({ value: "ek_x", expiresAt: 9_999_999_999, model: "m" })) // token
+        .mockResolvedValueOnce({
+          ok: false,
+          status: 404,
+          text: async () =>
+            JSON.stringify({
+              error: { message: "The model `x` does not exist", code: "model_not_found" },
+            }),
+        }), // SDP call → upstream 404
+    );
+
+    render(<VoiceMic sessionId="s1" onTranscript={() => {}} />);
+    fireEvent.click(screen.getByRole("button", { name: /start voice/i }));
+
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toMatch(/HTTP 404/);
+    expect(alert.textContent).toMatch(/does not exist/);
+    expect(stopSpy).toHaveBeenCalled(); // torn down on failure
+  });
+});

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { DecisionBanner } from "@/components/chat/decision-banner";
 import { MessageBubble, type ChatMessage } from "@/components/chat/message-bubble";
 import { ProfileSelector } from "@/components/chat/profile-selector";
+import { VoiceMic } from "@/components/voice/voice-mic";
 import {
   createSession,
   listProfiles,
@@ -117,6 +118,11 @@ export function CustomerChat() {
     runTurn(session.sessionId, lastUserMessageRef.current);
   }, [session, streaming, runTurn]);
 
+  // Voice transcripts (both sides) flow into the same chat log as spoken messages.
+  const addTranscript = useCallback((role: "user" | "assistant", text: string) => {
+    setMessages((m) => [...m, { id: nextId(), role, text, spoken: true }]);
+  }, []);
+
   const resetConversation = useCallback(async () => {
     if (!session) return;
     abortRef.current?.abort();
@@ -171,13 +177,17 @@ export function CustomerChat() {
         {messages.length === 0 && (
           <div className="m-auto max-w-sm text-center text-sm text-zinc-500 dark:text-zinc-400">
             <p className="mb-2">Ask about a refund on one of your orders.</p>
-            <button
-              type="button"
-              onClick={() => setInput("Hi, I'd like a refund for my order ord_1001.")}
-              className="rounded-full border border-zinc-200 px-3 py-1 text-xs transition-colors hover:bg-zinc-100 dark:border-zinc-800 dark:hover:bg-zinc-800"
-            >
-              Try: “refund my order ord_1001”
-            </button>
+            {session.sampleOrderId && (
+              <button
+                type="button"
+                onClick={() =>
+                  setInput(`Hi, I'd like a refund for my order ${session.sampleOrderId}.`)
+                }
+                className="rounded-full border border-zinc-200 px-3 py-1 text-xs transition-colors hover:bg-zinc-100 dark:border-zinc-800 dark:hover:bg-zinc-800"
+              >
+                Try: “refund my order {session.sampleOrderId}”
+              </button>
+            )}
           </div>
         )}
         {messages.map((m) => (
@@ -211,12 +221,16 @@ export function CustomerChat() {
         </div>
       )}
 
+      <div className="flex justify-center border-t border-zinc-200 pt-3 pb-1 dark:border-zinc-800">
+        <VoiceMic sessionId={session.sessionId} disabled={streaming} onTranscript={addTranscript} />
+      </div>
+
       <form
         onSubmit={(e) => {
           e.preventDefault();
           send();
         }}
-        className="flex items-end gap-2 border-t border-zinc-200 pt-3 dark:border-zinc-800"
+        className="flex items-end gap-2 pt-2"
       >
         <textarea
           aria-label="Message to the refund agent"

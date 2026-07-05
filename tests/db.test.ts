@@ -13,6 +13,7 @@ import {
   OrderFixtureSchema,
   resetAllSessions,
   resetSession,
+  resolveId,
   sessionCount,
 } from "@/lib/db";
 
@@ -261,5 +262,49 @@ describe("markOrderRefunded", () => {
       ok: false,
       reason: "session_not_found",
     });
+  });
+});
+
+describe("spoken / loose identifier resolution (voice transcription drops case + underscores)", () => {
+  it("resolveId matches exact, then case+separators, then the bare numeric part — uniquely", () => {
+    const orders = ["ord_1001", "ord_1015", "ord_1016"];
+    // exact
+    expect(resolveId("ord_1001", orders)).toBe("ord_1001");
+    // case + separators
+    expect(resolveId("ORD1001", orders)).toBe("ord_1001");
+    expect(resolveId("ord-1001", orders)).toBe("ord_1001");
+    expect(resolveId("Ord_1001", orders)).toBe("ord_1001");
+    // bare numeric part, with words / punctuation
+    expect(resolveId("1001", orders)).toBe("ord_1001");
+    expect(resolveId("order 1001", orders)).toBe("ord_1001");
+    expect(resolveId("1,001", orders)).toBe("ord_1001");
+    expect(resolveId("#1001", orders)).toBe("ord_1001");
+    expect(resolveId("1015", orders)).toBe("ord_1015");
+  });
+
+  it("never guesses: ambiguous, empty, or non-matching queries resolve to undefined", () => {
+    expect(resolveId("1", ["ord_1", "cus_1"])).toBeUndefined(); // two numeric matches
+    expect(resolveId("", ["ord_1001"])).toBeUndefined();
+    expect(resolveId("   ", ["ord_1001"])).toBeUndefined();
+    expect(resolveId("banana", ["ord_1001"])).toBeUndefined(); // no digits, no canon match
+    expect(resolveId("9999", ["ord_1001", "ord_1015"])).toBeUndefined(); // no numeric match
+  });
+
+  it("getOrder resolves spoken order-id forms to the stored order", () => {
+    const s = createSession();
+    for (const spoken of ["ord_1001", "ORD1001", "ord-1001", "1001", "order 1001", "1,001"]) {
+      expect(getOrder(s.id, spoken)?.order.id).toBe("ord_1001");
+    }
+    expect(getOrder(s.id, "ord_9999")).toBeUndefined(); // still not found
+    expect(getOrder(s.id, "banana")).toBeUndefined();
+  });
+
+  it("getCustomer resolves spoken customer-id forms (leading zeros included)", () => {
+    const s = createSession();
+    expect(getCustomer(s.id, "cus_01")?.id).toBe("cus_01");
+    expect(getCustomer(s.id, "CUS01")?.id).toBe("cus_01");
+    expect(getCustomer(s.id, "1")?.id).toBe("cus_01"); // "1" == "01" numerically
+    expect(getCustomer(s.id, "customer 15")?.id).toBe("cus_15");
+    expect(getCustomer(s.id, "cus_99")).toBeUndefined();
   });
 });

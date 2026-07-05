@@ -11,6 +11,8 @@ export interface Profile {
 export interface SessionInfo {
   sessionId: string;
   customer: { id: string; name: string; email: string } | null;
+  /** A real order id for the bound customer, for a per-profile empty-state hint (null if none). */
+  sampleOrderId?: string | null;
 }
 
 export async function listProfiles(): Promise<Profile[]> {

@@ -282,8 +282,48 @@ export function listCustomers(sessionId: string): Customer[] {
   return sessions.get(sessionId)?.customers ?? [];
 }
 
+/**
+ * Resolve a loosely-typed / SPOKEN identifier to a stored id. Voice transcription drops underscores,
+ * changes case, and adds words/punctuation ("ord_1001" → "ORD1001", "order 1001", "1,001", "#1001"),
+ * so exact-string matching fails on speech input. We match, in order: (1) exact, (2) case- and
+ * separator-insensitive, (3) the bare numeric part. Each step resolves ONLY when it matches exactly
+ * one candidate — an ambiguous match returns `undefined` rather than guessing, so this can never
+ * mis-route a refund. Ownership (R6) is enforced separately, on the resolved ids.
+ */
+const canonId = (s: string): string => s.toLowerCase().replace(/[^a-z0-9]/g, "");
+const numKey = (s: string): string | null => {
+  const digits = s.replace(/\D/g, "");
+  return digits ? String(Number.parseInt(digits, 10)) : null;
+};
+
+export function resolveId(query: string, candidates: readonly string[]): string | undefined {
+  if (typeof query !== "string") return undefined;
+  const q = query.trim();
+  if (!q) return undefined;
+  if (candidates.includes(q)) return q; // 1) exact (fast path — never ambiguous)
+
+  const qc = canonId(q); // 2) case + separators: "ORD1001", "ord-1001"
+  if (qc) {
+    const byCanon = candidates.filter((c) => canonId(c) === qc);
+    if (byCanon.length === 1) return byCanon[0];
+  }
+
+  const qn = numKey(q); // 3) bare numeric part: "1001", "order 1001", "1,001", "#1001"
+  if (qn !== null) {
+    const byNum = candidates.filter((c) => numKey(c) === qn);
+    if (byNum.length === 1) return byNum[0];
+  }
+  return undefined;
+}
+
 export function getCustomer(sessionId: string, customerId: string): Customer | undefined {
-  return sessions.get(sessionId)?.customers.find((c) => c.id === customerId);
+  const session = sessions.get(sessionId);
+  if (!session) return undefined;
+  const resolved = resolveId(
+    customerId,
+    session.customers.map((c) => c.id),
+  );
+  return resolved ? session.customers.find((c) => c.id === resolved) : undefined;
 }
 
 export function findCustomerByEmail(sessionId: string, email: string): Customer | undefined {
@@ -300,11 +340,27 @@ export function getOrder(
 ): { customer: Customer; order: Order } | undefined {
   const session = sessions.get(sessionId);
   if (!session || typeof orderId !== "string") return undefined;
+  // Resolve a spoken/loose order id against every order id in the session (unique-match only).
+  const resolved = resolveId(
+    orderId,
+    session.customers.flatMap((c) => c.orders.map((o) => o.id)),
+  );
+  if (!resolved) return undefined;
   for (const customer of session.customers) {
-    const order = customer.orders.find((o) => o.id === orderId);
+    const order = customer.orders.find((o) => o.id === resolved);
     if (order) return { customer, order };
   }
   return undefined;
+}
+
+/** Resolve a spoken/loose order id to its canonical stored id for this session (or undefined). */
+export function resolveOrderId(sessionId: string, orderId: string): string | undefined {
+  const session = sessions.get(sessionId);
+  if (!session) return undefined;
+  return resolveId(
+    orderId,
+    session.customers.flatMap((c) => c.orders.map((o) => o.id)),
+  );
 }
 
 // ---------------------------------------------------------------------------

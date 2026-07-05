@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
-import { getOrder } from "@/lib/db";
+import { getCustomer, getOrder } from "@/lib/db";
 import type { DecisionPayload } from "@/lib/events";
 import { ClauseSchema, defineTool } from "@/lib/tools/types";
 
@@ -38,10 +38,11 @@ export const escalateToHumanTool = defineTool<Input, Output>({
       reason: input.reason,
     };
     // If an order is referenced and it exists, it must belong to the requesting customer — otherwise
-    // refuse, so an escalation can't be misattributed to another customer's order.
+    // refuse, so an escalation can't be misattributed to another customer's order. Compare RESOLVED ids.
     if (input.orderId) {
       const found = getOrder(ctx.sessionId, input.orderId);
-      if (found && found.customer.id !== input.customerId) {
+      const requester = getCustomer(ctx.sessionId, input.customerId);
+      if (found && (!requester || found.customer.id !== requester.id)) {
         return { escalated: false, refusedReason: "not_owned_by_customer", ...base };
       }
     }

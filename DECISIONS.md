@@ -161,3 +161,81 @@ keep moving"). Format: `[Dn] Step N — decision — rationale`.
   region (`tabIndex=0` + focus ring), consistent with the `aria-pressed` filter chips and `aria-current` session
   buttons; clause chips are keyed by `${clause}-${i}` (in both the dashboard and the Step-6 banner) so duplicate
   citations can't collide on the React key and silently drop.
+
+## Step 8 — Voice pipeline (OpenAI Realtime API over WebRTC)
+
+- **[D36] GA ephemeral-token + WebRTC flow** — the server mints a short-lived client secret (`ek_…`) via the SDK
+  `client.realtime.clientSecrets.create` (GA `/v1/realtime/client_secrets`), attaching the full session config;
+  the browser then POSTs its SDP offer to `https://api.openai.com/v1/realtime/calls` with `Authorization: Bearer
+  ek_…` + `Content-Type: application/sdp` (no `?model=` — the model is carried by the token's session config).
+  The server API key NEVER reaches the browser. `POST /api/voice/token` returns only `{ value, expiresAt, model }`;
+  TTL is 600s (`REALTIME_TOKEN_TTL_SECONDS`). Verified against the real API by `scripts/smoke-voice.mts`.
+- **[D37] One policy, two transports** — `buildRealtimeSessionConfig` reuses the EXACT text-agent system prompt
+  (`buildSystemPrompt`, now exported) and the SAME six tools (`realtimeTools`, derived from the same `ToolDef`
+  list + Zod schemas as `openaiTools`, just flattened to the Realtime shape). Voice tool calls are forwarded by
+  the browser to `POST /api/voice/tool`, which runs them through the shared `executeTool` — so the money decision
+  stays code-enforced (`process_refund` re-checks eligibility internally, guarding voice exactly like text) and
+  the reasoning events flow to the SAME event bus → admin dashboard automatically.
+- **[D38] Cost guard for voice** — the mini realtime model (`gpt-realtime-mini`) and the mini input-transcription
+  model (`gpt-4o-mini-transcribe`) both live in `lib/config.ts` (`MODELS.realtime` / `REALTIME_TRANSCRIBE_MODEL`),
+  alongside `REALTIME_VOICE` and `REALTIME_CALLS_URL`. Both stay MINI tier per the cost guard (a mini→mini change,
+  not a full-size upgrade — no human approval needed). Input transcription is explicitly enabled
+  (`audio.input.transcription`) because it defaults OFF — without it the customer's spoken turns never emit
+  transcripts, and the spec requires BOTH sides' transcripts in the chat log.
+  - **Realtime-model gotcha (Checkpoint B finding, S8-F7):** `gpt-4o-mini-realtime-preview` is accepted by
+    `/v1/realtime/client_secrets` (the token mints — a false green) but is NOT served by the GA WebRTC
+    `/v1/realtime/calls` endpoint for this account, which 404s `model_not_found` on the real SDP call. The two
+    endpoints have DIFFERENT model availability, and the codec check runs before the model check (so a dummy SDP
+    hides it). Switched to `gpt-realtime-mini`, which works on both — verified by a real-browser WebRTC check
+    (`scripts/voice-connect-check.mts`, fake mic → `/v1/realtime/calls` → 201). Lesson: token minting does not
+    prove the call endpoint accepts the model.
+- **[D39] AbortSignal lifecycle + graceful degradation** — the browser client (`lib/client/voice.ts`) is driven by
+  an `AbortSignal` the mic component holds synchronously, so a stop/unmount/session-switch cancels even mid-connect
+  (no leaked hot mic); `cleanup()` is idempotent and releases mic tracks + pc/dc + the audio element. Every failure
+  mode is a typed `onError` → the UI degrades to text chat: unsupported browser (feature-detected via
+  `useSyncExternalStore`), mic denied (DOMException name), token/connect errors, and a shared `fail()` teardown for
+  all connect-side errors (incl. the Realtime data-channel `error` event). Transient ICE `disconnected` gets a 5s
+  grace period before teardown (only `failed` is terminal). Testable offline via a mocked `EventSource`/`RTCPeerConnection`.
+- **[D40] Verification split (automated vs. Checkpoint B)** — automatable checks are covered: token auth/expiry +
+  no-key-leak, the tool round-trip (`/api/voice/tool` driven as a mocked realtime call would), mic-denied, and
+  unsupported-degradation (unit + a Playwright browser check), plus a real-API `smoke-voice` proving the model +
+  session config are accepted end-to-end. A real microphone can't be automated here, so the live spoken interaction
+  is **Checkpoint B**: a 5-scenario human live-mic script (standard refund; policy-violation hold-the-line;
+  interruption mid-sentence; ambiguous mumbled request; off-topic) whose confirmed results are required before
+  Step 8's sweep can close. Checkpoint B surfaced two defects the automated sweeps could not: S8-F7 (the realtime
+  model 404 — now guarded by `scripts/voice-connect-check.mts`, a real-browser WebRTC check) and S8-F8 (spoken-id
+  lookup — see D41).
+- **[D41] Spoken/loose identifier resolution (Checkpoint B, S8-F8)** — speech transcription drops underscores and
+  casing (`ord_1001` → `ORD1001`/`order 1001`/`1,001`), so exact-string ID matching broke voice order lookups.
+  Fixed at the DATA layer (not the prompt): `resolveId` in `lib/db.ts` resolves exact → case/separator-insensitive
+  → bare-numeric-part, but ONLY on a unique match (ambiguous/empty/no-digit → `undefined`, never guesses), so it
+  can never mis-route a refund. `getOrder`/`getCustomer` use it. To keep R6 sound, the ownership checks in the
+  eligibility engine + `deny_refund` + `escalate_to_human` now compare **resolved** customer ids (`owner.id ===
+  requester.id`), so a loose form can't cause a false R6 and a spoken order id owned by another customer is still
+  declined. Emails already match case/whitespace-insensitively; spoken emails are lower-risk because the voice
+  session binds the customer (only the order id is spoken). A 2-lens adversarial review of this money/security
+  change found no collision or ownership bypass.
+
+## Step 8 — Checkpoint B findings (F1–F4)
+
+- **[D42] Decision events come from the deterministic engine, not the model's tool choice (F1)** — Checkpoint B
+  showed the voice model would SPEAK a denial without calling `deny_refund`, so no `decision` event reached the
+  dashboard. Since we can't force a specific tool call, the guarantee is code-level: `check_refund_eligibility`
+  (which the model reliably calls) emits the `denied`/`escalated` decision for a terminal decline/escalate verdict;
+  `process_refund` emits the `approved` decision (it performs the payout). `executeTool` canonicalizes the order id
+  (spoken forms) and emits **exactly one** decision per resolved order — dedupe by canonical order, or by outcome
+  when a follow-up escalate/deny carries no resolvable order key (S8-F14, caught by the money-path sweep). So every
+  resolved request produces one authoritative Decision on the dashboard for BOTH transports, regardless of which
+  recording tool the model additionally calls.
+- **[D43] Voice transcripts on the bus (F2)** — `POST /api/voice/transcript` emits `user_message`/`assistant_message`
+  so voice sessions appear on the admin dashboard exactly like text ones (a session shows up on its first turn, and
+  a tool-less conversation is still visible). The client mirrors finalized transcripts there (best-effort; never
+  breaks the call) in addition to rendering them locally as spoken bubbles.
+- **[D44] Robust turn detection (F3)** — the realtime session sets `audio.input.noise_reduction: near_field` + a
+  less-twitchy `server_vad` (threshold 0.6, silence 700ms) to reduce spurious self-interruptions while preserving
+  real barge-in; validated against the live API by `smoke-voice` + `voice-connect-check`.
+- **[D45] Per-profile UI copy (F4)** — the session response carries `sampleOrderId` (the bound customer's first
+  order) so the empty-state hint is never a stale hardcoded id; all shipped UI copy was swept for other hardcoded
+  profile/order references (README examples are handled in Step 10). Prompt rules 9–10 also fix two tone issues:
+  the agent IS the support team (escalate, never defer to "contact support") and must not promise confirmation
+  emails a self-contained mock won't send.

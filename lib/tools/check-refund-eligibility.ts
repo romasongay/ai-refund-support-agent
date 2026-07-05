@@ -7,6 +7,7 @@
  */
 import { z } from "zod";
 import { getCustomer, getOrder, MONEY_EPSILON, type Order, type OrderItem } from "@/lib/db";
+import type { DecisionPayload } from "@/lib/events";
 import {
   defineTool,
   EligibilityVerdictSchema,
@@ -88,8 +89,10 @@ export function evaluateEligibility(
 
   const { customer: owner, order } = found;
 
-  // Step 1b — ownership: order must belong to the requesting (and known) customer.
-  if (!requester || owner.id !== customerId) {
+  // Step 1b — ownership: order must belong to the requesting (and known) customer. Compare RESOLVED
+  // customer ids (both sides go through resolveId), so a spoken/loose id can't cause a false R6 —
+  // and, conversely, a spoken order id owned by someone else is still correctly declined.
+  if (!requester || owner.id !== requester.id) {
     return verdict(
       "decline",
       ["R6"],
@@ -200,4 +203,21 @@ export const checkRefundEligibilityTool = defineTool<Input, EligibilityVerdict>(
   inputSchema,
   outputSchema: EligibilityVerdictSchema,
   run: (ctx, input) => evaluateEligibility(ctx, input.customerId, input.orderId),
+  // The deterministic engine's TERMINAL verdict IS the decision — emit it here so a `decision` event
+  // (denied/escalated + clauses) is guaranteed for BOTH text and voice, even if the model never calls
+  // deny_refund/escalate_to_human. Approvals emit from process_refund (which performs the payout);
+  // "verify" (unknown order to re-confirm) is not a resolution. The executor dedupes per canonical order
+  // (or by outcome when a follow-up escalate/deny carries no resolvable order id), so a later
+  // deny_refund/escalate_to_human call for the same resolution won't double-emit.
+  toDecision: (input, verdict): DecisionPayload | null => {
+    const base = {
+      clauses: verdict.clauses,
+      orderId: input.orderId,
+      customerId: input.customerId,
+      summary: verdict.reasoning,
+    };
+    if (verdict.outcome === "decline") return { outcome: "denied", ...base };
+    if (verdict.outcome === "escalate") return { outcome: "escalated", ...base };
+    return null;
+  },
 });

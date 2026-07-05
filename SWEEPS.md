@@ -339,3 +339,172 @@ investigation). Every prior fix confirmed correct and regression-free; the SEQ-m
 store, pagination, guarded memos, clause-key fix, a11y, and `sess_debug*`-restricted debug route all verified.
 
 **Result: CLEAN — zero findings.** Exit rule met (3 sweeps, most recent clean). Step 7 closed.
+
+---
+
+## Step 8 — Sweep 1
+
+**Mechanical gate:** `tsc` 0 · ESLint 0 · `prettier` clean · Vitest **143/143** (+voice: realtime-tool parity,
+`buildRealtimeSessionConfig`, token seam, token route no-key/bad-body/unknown-session/no-key-leak, voice-tool
+round-trip → bus events + graceful failure, `isVoiceSupported`, mic-denied, unsupported degradation) ·
+`next build` OK (`/api/voice/token`, `/api/voice/tool` dynamic). **Real-API smoke** (`scripts/smoke-voice.mts`):
+OpenAI accepted the mini realtime model + tools + policy prompt and minted a short-lived `ek_…` secret; the
+server key never appears. **Browser check** (`scripts/voice-ui-check.mts`): the mic control renders in the chat
+and a blocked mic degrades to a helpful message.
+
+**Adversarial review:** 3-lens hostile workflow (backend-security · client/UI-robustness · spec-consistency),
+each finding verified. 3 raw → **3 confirmed** (backend-security lens clean; 0 refuted). All three were
+voice-client lifecycle bugs:
+
+- 🔴 **[S8-F1]** Unmount / session-switch mid-connect leaked a live mic + PeerConnection + audio element (the
+  controller only existed after the full async startup, so `stop()` was a no-op during "connecting").
+  → **FIXED**: `startVoiceSession` now takes an `AbortSignal` the component holds synchronously; aborting it —
+  even mid-connect — runs an idempotent `cleanup()` (stops mic tracks, closes pc/dc, removes the audio element),
+  with `isClosed()` checkpoints after every await. + a regression test (mic released after mid-connect abort).
+- 🟠 **[S8-F2]** Transient ICE `disconnected` was treated as terminal `failed`, killing an otherwise-recoverable
+  call. → **FIXED**: only `failed` is terminal; `disconnected` starts a 5s grace timer that tears down only if
+  it hasn't recovered; `connected` clears it.
+- 🔴 **[S8-F3]** The retry button was permanently dead after any start failure (the error callback nulled the
+  ref, then the resolved-controller assignment overwrote it non-null, so `start()` early-returned forever).
+  → **FIXED**: guard on a synchronous `activeRef` reset by `onState("error")`; no post-await controller ref. +
+  a regression test (retry re-invokes `getUserMedia`).
+
+## Step 8 — Sweep 2
+
+Re-ran the gate (`tsc`/ESLint 0 · `prettier` clean · Vitest **145/145** · `next build` OK · real smoke + browser
+check PASS). Hostile re-review (fix-regressions + a fresh full pass), each finding verified. 3 raw → **3
+confirmed** (0 refuted; two consequences of the S1 fixes, one spec gap the first sweep missed):
+
+- 🔴 **[S8-F4]** The data-channel `error` case called `onError` but not `onState("error")` — asymmetric with
+  every other path — so a server error mid-call left the UI stuck "listening" and didn't tear the call down.
+  → **FIXED**: a shared `fail()` helper (`onError` + `cleanup` + `onState("error")`) now drives every
+  connect-side failure, including the data-channel error case. + a regression test (server error → teardown + retry).
+- 🟠 **[S8-F5]** The button was `disabled` during "connecting"/"requesting-mic" — the exact active states where a
+  click would cancel — so a hung connect couldn't be aborted (blunting the F1 fix). → **FIXED**: the button
+  stays clickable while connecting (only the parent `disabled` suppresses it). + a regression test.
+- 🔴 **[S8-F6]** Spec violation: the session config never enabled `audio.input.transcription`, so the Realtime
+  server never emitted the CUSTOMER's transcripts — only the assistant's words reached the chat log, breaking
+  "transcripts of BOTH sides". → **FIXED**: enabled input transcription (`gpt-4o-mini-transcribe`, one config
+  constant) + widened the config type. + a config test; real-API smoke re-confirmed OpenAI accepts the config.
+
+## Step 8 — Sweep 3 (clean — automated)
+
+Final full sweep: `tsc` 0 · ESLint 0 · `prettier` clean · Vitest **145/145** · `next build` OK · real
+`smoke-voice` PASS · `voice-ui-check` PASS. Fresh 3-lens hostile pass over the whole voice pipeline
+(client-lifecycle · backend-security · spec-consistency) — 1 raw finding, **REFUTED** (a missing
+`connectionState === "closed"` branch: `closed` only fires when *we* call `pc.close()`, which is always paired
+with a state reset, so no reachable stuck-active state); backend-security and spec-consistency lenses clean.
+
+**Result: automated sweeps CLEAN (3 sweeps, most recent clean).** ⏸ **Step 8 remains OPEN pending Checkpoint B**
+— per §2.3 the sweep cycle can close only after the human confirms the 5-scenario live-mic test. Commit is held
+until then.
+
+## Step 8 — Sweep 4 (Checkpoint B — human live-mic test)
+
+The human ran the live-mic test and hit a **real connectivity defect the automated sweeps could not catch** (no
+automated check exercised a real browser WebRTC SDP exchange against OpenAI):
+
+- 🔴 **[S8-F7]** Voice failed to connect: the browser's `POST https://api.openai.com/v1/realtime/calls` returned
+  **404 `model_not_found`** — `gpt-4o-mini-realtime-preview` is accepted by `/v1/realtime/client_secrets` (the
+  token mints, a **false green** in `smoke-voice`) but is **not served by the GA WebRTC `/v1/realtime/calls`
+  endpoint** for this account. Diagnosed against the live docs + a real request matrix (a dummy SDP hid it —
+  OpenAI's codec check runs BEFORE the model check; only a real browser SDP reaches the model check).
+  → **FIXED**: switched `MODELS.realtime` to **`gpt-realtime-mini`** (GA mini realtime, still mini-tier), verified
+  end-to-end by a NEW real-browser regression check (`scripts/voice-connect-check.mts`, fake mic → `/v1/realtime/
+  calls` → **201**). Also fixed the error UX: the SDP-failure path now surfaces the **real upstream status +
+  message** (`Voice couldn't connect (HTTP 404): The model … does not exist`) instead of a generic message that
+  cost a debugging round. + a unit regression test for the surfaced error, and `smoke-voice` now states plainly
+  that minting acceptance does NOT prove the call endpoint serves the model.
+
+Gate re-run after the fix: `tsc`/ESLint 0 · `prettier` clean · Vitest **146/146** · `next build` OK · real
+`smoke-voice` PASS · **`voice-connect-check` PASS (201)**. **Human retest confirmed:** voice connects, agent
+audio is audible both ways, both sides' transcripts render as spoken bubbles, and the dashboard streams voice
+tool calls live — but surfaced a second finding (Sweep 5).
+
+## Step 8 — Sweep 5 (Checkpoint B — spoken-id lookup)
+
+The live voice retest resolved connectivity but exposed a real tool-layer defect:
+
+- 🔴 **[S8-F8]** Order lookup failed on speech input: the spoken order id was transcribed as **"ORD1001"** (no
+  underscore, uppercase) while the stored id is `ord_1001`, so `get_order_details` found nothing and the agent
+  (correctly) couldn't proceed. Exact-string ID matching is incompatible with transcription (underscores/casing
+  don't survive). → **FIXED at the tool/db layer, not the prompt**: new `resolveId(query, candidates)` in
+  `lib/db.ts` matches exact → case/separator-insensitive → bare-numeric-part, resolving ONLY on a UNIQUE match
+  (ambiguous/empty/no-digit → `undefined`, never guesses). `getOrder` and `getCustomer` route through it
+  ("ORD1001", "ord-1001", "order 1001", "1,001", "#1001", "1001" all → `ord_1001`). The three R6 ownership checks
+  (eligibility / deny / escalate) now compare **resolved** customer ids, so loose forms can't cause a false R6 —
+  and a spoken order id owned by someone else is still declined. + 8 unit tests incl. the security case (cus_07
+  speaking cus_01's order in loose form → R6 decline, no payout) and ambiguity/junk guards. Emails already match
+  case/space-insensitively; spoken emails are lower-risk because the voice session BINDS the customer (the model
+  passes the exact bound id — only the order id is spoken).
+
+Gate after the fix: `tsc`/ESLint 0 · `prettier` clean · Vitest **154/154** · `next build` OK. Adversarial
+re-review of the money/security-sensitive change (2 lenses: security/ownership + resolution-correctness) —
+**0 findings** (no collision, no ownership bypass; R6 preserved).
+
+## Step 8 — Sweep 6 (Checkpoint B — all 5 scenarios pass + 4 findings)
+
+**Human re-test: all 5 scenarios + the ownership case PASS** — standard refund (spoken id resolved, approved
+$129/R1, agent spoke the clause), hold-the-line (R2 through two pressure rounds), ownership (Casey speaking
+Avery's order → R6 decline, no payout), barge-in (audio stopped, context retained), ambiguous (asked for the
+order id, no invented order), off-topic (polite decline). Confirmed: heard audio + both-side spoken bubbles,
+dashboard streamed voice tool calls live. Four findings surfaced (F1–F4) + 2 tone nits:
+
+- 🔴 **[S8-F10 / F1]** Denials/escalations emitted NO decision event: the model spoke the denial without calling
+  deny_refund, so no Decision, dashboard read "0 Denied", session stuck "open". → **FIXED (code-level, both
+  transports)**: the deterministic engine's terminal verdict IS the decision — `check_refund_eligibility` now
+  emits `denied`/`escalated` for decline/escalate verdicts; `executeTool` canonicalizes the order id and dedupes
+  so there's EXACTLY ONE decision per resolved order (approvals still emit from `process_refund`'s payout). + tests.
+- 🟠 **[S8-F11 / F2]** Voice transcripts never reached the event bus — a tool-less voice session (e.g. the ambiguous
+  one) never appeared on the dashboard at all. → **FIXED**: new `POST /api/voice/transcript` emits
+  `user_message`/`assistant_message`; the client mirrors both sides' finalized transcripts there. Voice sessions
+  now appear on their first turn with Customer/Agent-reply events. + test + a browser check.
+- 🟠 **[S8-F12 / F3]** The agent interrupted itself (one user turn → two responses, first cut off) — a spurious VAD
+  misfire. → **MITIGATED**: session config now sets `noise_reduction: near_field` + a less-twitchy `server_vad`
+  (threshold 0.6, silence 700ms), keeping real barge-in. Real API accepts the config; WebRTC still connects (201).
+- 🟡 **[S8-F13 / F4]** Hardcoded empty-state hint (`ord_1001`) showed for every profile. → **FIXED**: the session
+  response carries the bound customer's `sampleOrderId`; the chip is now per-profile (browser-verified: Casey →
+  `ord_1003`). Swept UI copy — no other hardcoded profile/order refs (README examples are Step 10).
+- 🟡 **Tone nits** — prompt rules 9–10: the agent IS the support team (use `escalate_to_human`, never tell the
+  customer to "contact support") and must not promise confirmation emails a mock system won't send.
+
+**Adversarial review of the F1–F4 fixes** (2 lenses; F1 money-path scrutinized hardest) found **1** issue:
+
+- 🟠 **[S8-F14]** Duplicate escalated decision: the dedupe guard `!(canonical && …)` short-circuited to always-emit
+  when a decision had no resolvable order key, so an account-level `escalate_to_human` (no orderId) after the
+  eligibility check already emitted the escalation produced a SECOND `escalated` decision. → **FIXED**: canonicalize
+  with no raw fallback (unresolvable → no key) and dedupe by **outcome** when there's no order key; the emitted
+  decision's orderId is always canonical or cleanly undefined (never a spoken/garbage string). + 2 regression tests.
+
+Gate after all fixes: `tsc`/ESLint 0 · `prettier` clean · Vitest **163/163** · `next build` OK · real
+`smoke-voice` PASS (new audio config accepted) · `voice-connect-check` PASS (201) · F2 + F4 browser checks PASS.
+A focused money-path re-verification of the dedupe fix (S8-F14) returned **SOUND**: no reachable double-emit and
+no reachable over-suppression (the outcome fallback only fires for order-less escalations, and no bound customer
+in the dataset can produce two distinct order-less escalations — the sole two-order customer has approve-only
+orders); the emitted `orderId` is always canonical or cleanly undefined. One accepted benign edge: an
+out-of-contract order-less `escalate_to_human` issued BEFORE the mandatory eligibility check would log two
+escalated records — no money impact, no misattribution, and a guard would risk over-suppression, so it stands.
+## Step 8 — Checkpoint B CONFIRMED (Sweep 6 closed)
+
+**Human targeted re-test — all three PASS, and all three decision types verified live:**
+
+- **Denial** (Casey / order 1003): `Decision · denied` citing **R2** on the dashboard, **Denied 0→1**, session dot
+  red; the session also shows Customer + Agent-reply events (F2 on a tool-ful session). **Bonus — escalation
+  verified**: Emerson Blake / $1,299 TV → `Decision · escalated` citing **R4**, **Escalated 0→1**, amber dot,
+  `escalate_to_human` recorded. (approve verified in Sweep 5; **all three decision types now human-confirmed live**.)
+- **Tool-less voice session** (Logan Kim): appeared in the session list immediately with Customer + Agent-reply
+  bubbles and zero tool calls — **F2 confirmed**.
+- **Scenario 5 re-run** (Riley Foster — weather, then flight): one response per turn, no self-interruption in
+  transcript or audio — **F3 mitigation holding**.
+
+**Result: Checkpoint B CONFIRMED.** Step 8's sweep cycle is complete (6 sweeps; the final live re-test — the
+authoritative Checkpoint-B verification — passed clean). **Step 8 closed.**
+
+**Deferred backlog (per human — cosmetic, do NOT block step-8; fold into a later step's sweep):**
+
+- 🟡 **[M1]** Admin dashboard: `Decision` timeline rows are always green (`event-row.tsx` uses `tone="emerald"`
+  for every decision), so denied/escalated rows don't match the red/amber dots + counters. Tint the row by outcome.
+  _(Step 7 dashboard polish — fix in Step 10 demo polish or the final full-system sweep.)_
+- 🟡 **[M2]** Voice transcript events can arrive AFTER the tool events from the same exchange (a Customer bubble
+  renders below the first tool call it triggered), because the transcript POST and the tool round-trip race.
+  Consider ordering by utterance start, or document as accepted. _(Revisit in a later sweep.)_

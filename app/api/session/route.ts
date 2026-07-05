@@ -34,11 +34,16 @@ export async function POST(request: Request): Promise<Response> {
   try {
     const session = createSession({ boundCustomerId: parsed.data.customerId });
     let customer: { id: string; name: string; email: string } | null = null;
+    let sampleOrderId: string | null = null;
     if (session.boundCustomerId) {
       const c = getCustomer(session.id, session.boundCustomerId);
-      if (c) customer = { id: c.id, name: c.name, email: c.email };
+      if (c) {
+        customer = { id: c.id, name: c.name, email: c.email };
+        // A real order id for THIS customer, so the empty-state hint is never a stale hardcoded one.
+        sampleOrderId = c.orders[0]?.id ?? null;
+      }
     }
-    return jsonResponse({ sessionId: session.id, customer });
+    return jsonResponse({ sessionId: session.id, customer, sampleOrderId });
   } catch (err) {
     return badRequest(err instanceof Error ? err.message : "Could not create session.");
   }

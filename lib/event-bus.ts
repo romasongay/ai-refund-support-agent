@@ -94,6 +94,33 @@ export function getHistory(sessionId: string): ReasoningEvent[] {
 }
 
 /**
+ * True if a `decision` event has already been recorded for this order in the session. Used to
+ * guarantee EXACTLY ONE decision per resolved order — whichever terminal tool fires first (the
+ * eligibility engine for declines/escalations, or process_refund for approvals) emits it; later
+ * tools for the same order are deduped.
+ */
+export function hasDecisionForOrder(sessionId: string, orderId: string): boolean {
+  const list = history.get(sessionId);
+  if (!list) return false;
+  return list.some(
+    (e) => e.type === "decision" && (e.payload as { orderId?: string }).orderId === orderId,
+  );
+}
+
+/**
+ * True if a decision with this outcome already exists for the session. Dedupe fallback for a terminal
+ * that carries NO resolvable order key (e.g. an account-level `escalate_to_human` with no orderId),
+ * which would otherwise slip past {@link hasDecisionForOrder} and double-emit.
+ */
+export function hasDecisionOfOutcome(sessionId: string, outcome: string): boolean {
+  const list = history.get(sessionId);
+  if (!list) return false;
+  return list.some(
+    (e) => e.type === "decision" && (e.payload as { outcome?: string }).outcome === outcome,
+  );
+}
+
+/**
  * Firehose backfill: EVERY session's events merged into one global chronological order (by publish
  * sequence). Reconstructed from the per-session histories, so each session's full retained history is
  * always backfillable regardless of cross-session volume. When `afterId` is a known event id (the SSE

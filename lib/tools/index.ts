@@ -5,8 +5,8 @@
  * throws to the caller — tool failures become graceful `{ ok: false }` results.
  */
 import { z } from "zod";
-import { getSession } from "@/lib/db";
-import { emit } from "@/lib/event-bus";
+import { getSession, resolveOrderId } from "@/lib/db";
+import { emit, hasDecisionForOrder, hasDecisionOfOutcome } from "@/lib/event-bus";
 import { checkRefundEligibilityTool } from "@/lib/tools/check-refund-eligibility";
 import { denyRefundTool } from "@/lib/tools/deny-refund";
 import { escalateToHumanTool } from "@/lib/tools/escalate-to-human";
@@ -44,8 +44,28 @@ function toOpenAITool(tool: ToolDef): OpenAITool {
   };
 }
 
-/** The tools array to hand to the OpenAI API (shared by text + voice). */
+/** The tools array to hand to the OpenAI Chat Completions API (text agent, Step 4). */
 export const openaiTools: OpenAITool[] = TOOLS.map(toOpenAITool);
+
+/** A Realtime API function tool: the SAME schema as {@link OpenAITool}, but flattened (name/description/
+ *  parameters at the top level rather than nested under `function`) as the Realtime API expects. */
+export interface RealtimeTool {
+  type: "function";
+  name: string;
+  description: string;
+  parameters: Record<string, unknown>;
+}
+
+/**
+ * The tools array to hand to the OpenAI Realtime API (voice agent, Step 8). Derived from the exact
+ * same {@link ToolDef} list + Zod schemas as {@link openaiTools}, so the voice agent and the text agent
+ * expose identical tools — voice tool calls run server-side through the same {@link executeTool} path.
+ */
+export const realtimeTools: RealtimeTool[] = TOOLS.map((tool) => {
+  const schema = z.toJSONSchema(tool.inputSchema) as Record<string, unknown>;
+  delete schema.$schema;
+  return { type: "function", name: tool.name, description: tool.description, parameters: schema };
+});
 
 /**
  * Execute a tool by name within a session. Emits observability events and returns a normalized
@@ -113,7 +133,20 @@ export async function executeTool(
     });
     if (tool.toDecision) {
       const decision = tool.toDecision(parsed.data, checked.data);
-      if (decision) emit("decision", sessionId, decision);
+      if (decision) {
+        // Normalize the order id (spoken forms) to the canonical stored id; an absent OR unresolvable
+        // order id yields no order key. Emit EXACTLY ONE decision per resolved request: dedupe by the
+        // canonical order when we have one, else by outcome (so an order-less escalate can't double-emit
+        // after the eligibility check already recorded the escalation).
+        const canonical = decision.orderId
+          ? resolveOrderId(sessionId, decision.orderId)
+          : undefined;
+        const payload = { ...decision, orderId: canonical };
+        const already = canonical
+          ? hasDecisionForOrder(sessionId, canonical)
+          : hasDecisionOfOutcome(sessionId, decision.outcome);
+        if (!already) emit("decision", sessionId, payload);
+      }
     }
     return { ok: true, tool: name, result: checked.data };
   } catch (err) {
