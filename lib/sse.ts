@@ -93,6 +93,11 @@ export function sseResponse(
 
       abortHandler = teardown;
       request.signal.addEventListener("abort", abortHandler);
+      // Flush an immediate preamble so the response HEAD is sent at once. Without a first byte, the
+      // platform delays the response head until the first write — up to `heartbeatMs` when there is
+      // ZERO backfill — so EventSource `onopen` (and the dashboard's "open" pill) would stall on a
+      // pristine feed. A leading SSE comment is ignored by the client and fixes this deterministically.
+      ctrl.comment("connected");
       heartbeat = setInterval(() => ctrl.comment("keep-alive"), heartbeatMs);
       userCleanup = onStart(ctrl) ?? undefined;
     },

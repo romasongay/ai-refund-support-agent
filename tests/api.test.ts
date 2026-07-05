@@ -188,6 +188,21 @@ describe("GET /api/events (SSE)", () => {
     expect(frames.map((f) => f.event)).toEqual(["user_message", "thought"]);
   });
 
+  it("flushes an immediate ': connected' preamble on connect (so onopen fires with zero backfill)", async () => {
+    const s = createSession(); // fresh session → no backfilled events
+    const res = await eventsGET(getReq(`http://t/api/events?sessionId=${s.id}`));
+    expect(res.headers.get("content-type")).toContain("text/event-stream");
+    // With no backfill, the FIRST bytes must still be the preamble comment — that's what flushes the
+    // response head and fires EventSource.onopen (the dashboard's "open" pill) on a pristine feed.
+    const reader = res.body!.getReader();
+    const firstChunk = await Promise.race([
+      reader.read().then(({ value }) => new TextDecoder().decode(value ?? new Uint8Array())),
+      new Promise<string>((resolve) => setTimeout(() => resolve("<no bytes within 2s>"), 2000)),
+    ]);
+    await reader.cancel();
+    expect(firstChunk).toContain(": connected");
+  });
+
   it("tails new events and supports two simultaneous streams on one session", async () => {
     const s = createSession();
     const [r1, r2] = await Promise.all([
