@@ -38,6 +38,7 @@ export function CustomerChat() {
   const abortRef = useRef<AbortController | null>(null);
   const lastUserMessageRef = useRef<string>("");
   const scrollRef = useRef<HTMLDivElement | null>(null);
+  const atBottomRef = useRef(true);
 
   useEffect(() => {
     let cancelled = false;
@@ -51,9 +52,17 @@ export function CustomerChat() {
     };
   }, []);
 
+  // Auto-scroll only when the user is already at the bottom — never yank them out of scrollback while
+  // they're reading an earlier part of a long or live-voice conversation.
   useEffect(() => {
+    if (!atBottomRef.current) return;
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
   }, [messages, activity, decision, error]);
+
+  const handleScroll = () => {
+    const el = scrollRef.current;
+    if (el) atBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 64;
+  };
 
   const selectProfile = useCallback(async (customerId: string) => {
     setCreating(true);
@@ -106,6 +115,9 @@ export function CustomerChat() {
   const send = useCallback(() => {
     const text = input.trim();
     if (!session || streaming || !text) return;
+    // Sending your own message always snaps you to the bottom — the stick-to-bottom guard only exists
+    // to avoid yanking you out of scrollback for *passive* incoming content (e.g. live voice transcripts).
+    atBottomRef.current = true;
     setMessages((m) => [...m, { id: nextId(), role: "user", text }]);
     setInput("");
     setDecision(null);
@@ -173,7 +185,11 @@ export function CustomerChat() {
         </div>
       </header>
 
-      <div ref={scrollRef} className="flex flex-1 flex-col gap-3 overflow-y-auto py-4">
+      <div
+        ref={scrollRef}
+        onScroll={handleScroll}
+        className="flex flex-1 flex-col gap-3 overflow-y-auto py-4"
+      >
         {messages.length === 0 && (
           <div className="m-auto max-w-sm text-center text-sm text-zinc-500 dark:text-zinc-400">
             <p className="mb-2">Ask about a refund on one of your orders.</p>

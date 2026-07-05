@@ -92,10 +92,14 @@ that check internally and refuses anything the policy doesn't approve — it tak
 order id, never a caller-supplied amount. Two independent guarantees make the audit trail complete:
 
 - **Denials/escalations** are emitted by the deterministic engine the moment it reaches a terminal
-  verdict (so they're recorded even if the model only speaks the outcome).
-- **Approvals** are settled by a turn-end backstop: if the engine approved an order but the model
-  didn't call `process_refund`, the loop issues it. Result: **every resolved request yields exactly
-  one decision event**, for both transports, regardless of the model's tool-calling variance.
+  verdict — for **both transports** — so they're recorded even if the model only speaks the outcome.
+- **Approvals** in the **text** loop are settled by a turn-end backstop: if the engine approved an
+  order but the model didn't call `process_refund`, the loop issues it. (Over voice, approvals rely on
+  the model calling `process_refund` after a passing eligibility check.)
+
+So denials and escalations are guaranteed exactly one decision event on either transport regardless of
+the model's tool-calling variance, and text approvals are too — the audit trail never silently drops a
+terminal verdict.
 
 ---
 

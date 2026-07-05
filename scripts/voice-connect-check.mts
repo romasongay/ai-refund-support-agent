@@ -40,15 +40,20 @@ async function main() {
   });
 
   try {
+    // Timeouts are deliberately generous: against a COLD dev server, Turbopack compiles each route
+    // on its first request (page, /api/session, /api/voice/token — the last one right at mic-click).
+    // A cold first-compile of the token route can take 10s+, so tight fixed waits produce a spurious
+    // "no /v1/realtime/calls observed" failure even though the wiring is correct.
     await page.goto(BASE, { waitUntil: "domcontentloaded" });
-    await page.getByText(/Choose a customer/i).waitFor({ timeout: 10000 });
+    await page.getByText(/Choose a customer/i).waitFor({ timeout: 20000 });
     await page.getByRole("button", { name: /order/i }).first().click();
     const mic = page.getByRole("button", { name: /start voice conversation/i });
-    await mic.waitFor({ timeout: 10000 });
+    await mic.waitFor({ timeout: 20000 });
     await mic.click();
 
-    // Wait for the SDP exchange to complete (poll for the calls response).
-    for (let i = 0; i < 30 && callsStatus === 0; i++) await page.waitForTimeout(500);
+    // Wait for the SDP exchange to complete (poll for the calls response) — up to 45s to absorb a
+    // cold token-route compile plus the round-trip to OpenAI.
+    for (let i = 0; i < 90 && callsStatus === 0; i++) await page.waitForTimeout(500);
 
     if (callsStatus === 0) throw new Error("no request to /v1/realtime/calls was observed");
     if (callsStatus >= 300)

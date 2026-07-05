@@ -26,10 +26,6 @@ export const TOOLS: ToolDef[] = [
 
 const TOOL_MAP = new Map<string, ToolDef>(TOOLS.map((t) => [t.name, t]));
 
-export function getTool(name: string): ToolDef | undefined {
-  return TOOL_MAP.get(name);
-}
-
 export interface OpenAITool {
   type: "function";
   function: { name: string; description: string; parameters: Record<string, unknown> };

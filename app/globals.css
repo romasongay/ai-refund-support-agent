@@ -73,9 +73,36 @@ body {
   background: transparent;
   padding: 0;
 }
+/* GFM tables: scroll horizontally inside the bubble instead of being clipped by its overflow-hidden. */
+.markdown table {
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
+  border-collapse: collapse;
+  margin: 0.5em 0;
+  font-size: 0.95em;
+}
+.markdown th,
+.markdown td {
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  padding: 0.3em 0.55em;
+  text-align: left;
+  white-space: nowrap;
+}
+.markdown th {
+  font-weight: 600;
+  background: rgba(0, 0, 0, 0.04);
+}
 @media (prefers-color-scheme: dark) {
   .markdown code,
   .markdown pre {
     background: rgba(255, 255, 255, 0.09);
+  }
+  .markdown th,
+  .markdown td {
+    border-color: rgba(255, 255, 255, 0.15);
+  }
+  .markdown th {
+    background: rgba(255, 255, 255, 0.06);
   }
 }

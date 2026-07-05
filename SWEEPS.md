@@ -554,3 +554,82 @@ backstops), so the only residual flakiness is a transient live-API blip — a ge
 **Result:** `tsc`/ESLint 0 · `prettier` clean · Vitest **170/170** (+eval harness offline tests: well-formed
 battery, decision assertions, verbal-cave + PII-leak + legit-denial-not-tripped) · `next build` OK · **SIX
 consecutive fully-green real eval runs** (23/23 each; criterion is 3). Exit criterion met. Step 9 closed.
+
+---
+
+## Step 10 — README + Demo Script
+
+Docs step; the sweep is the §3 adversarial focus (fresh-clone-to-running + every README claim verified true).
+
+- **Fresh-clone reproducibility**: `npm ci` from the committed lockfile (clean reinstall) → `npm run build`
+  (exit 0, all 9 routes) → `npm test` **171/171**. The README's one-command setup works from a clean environment.
+- **Claim fact-check** (hostile agent, read-only): cross-checked every concrete claim in README.md + DEMO_SCRIPT.md
+  against the code/data — the R1–R9 policy table + demo cheat-sheet vs the oracle (all 9 rows + extras correct),
+  model names vs `lib/config.ts`, routes vs `app/api/**`, npm scripts vs `package.json`, the beat-5
+  `/api/debug/emit` curl (accepts `sess_debugtrace`), env banner, the "6 tools" claim, the screenshots, and the
+  171-test / 16+7-eval / 15-profile counts. **VERIFIED — 0 inaccuracies.**
+- Built the mermaid architecture diagram (GitHub-safe `<br/>` labels), the "tools defined once, two transports"
+  story, the money-is-code guarantee, the voice/WebRTC flow, and two committed screenshots.
+- Folded in backlog **[M1]**: admin `Decision` rows now tint by outcome (approved=emerald / denied=rose /
+  escalated=amber) to match the dots + counters. + regression test. Fixed a stale realtime-model name in
+  `.env.example`. _(Backlog [M2] — voice transcript/tool event ordering — carried to the final Complete sweep.)_
+
+**Result:** `tsc`/ESLint 0 · `prettier` clean · Vitest **171/171** · `next build` OK · fresh-clone reproducible ·
+all doc claims verified. Step 10 closed.
+
+---
+
+## Complete — Final full-system sweep
+
+The Complete-step sweep cycle (§2.1, min 3 sweeps, last clean) run across the ENTIRE system on the shipping state:
+full eval suite, fresh-clone build/test, both transports exercised, dashboard verified against the three demo
+requirements. Hostile-reviewer lens throughout; findings below.
+
+### Sweep 1 — full-system adversarial pass → 6 findings (all fixed)
+
+- 🟡 **[C-F1]** `VoiceMic` was `disabled={disabled}` — during a live call the parent `disabled` (text streaming)
+  suppressed the button, so sending a text message mid-call stranded a **hot mic with no STOP**. → `disabled={disabled && !active}`; STOP is now always reachable while active.
+- 🟡 **[C-F2]** Wide GFM markdown tables were clipped by the assistant bubble's `overflow-hidden`. → added a
+  `.markdown table { display:block; overflow-x:auto; max-width:100% }` rule (+ th/td borders/padding, dark-mode
+  variants) mirroring the existing `.markdown pre` scroll rule, so wide tables scroll inside the bubble.
+- 🟡 **[C-F3]** Customer chat auto-scrolled on every update with no at-bottom guard — a streaming voice transcript
+  would **yank the reader out of scrollback**. → added `atBottomRef` (+ `onScroll` tracker, 64px threshold); the
+  effect only scrolls when already at bottom, and `send()` snaps to bottom (your own message always scrolls).
+- 🟡 **[C-F4]** README over-claimed "every resolved request yields exactly one decision event, for both transports"
+  — the turn-end approval backstop (`settleTurn`) is **text-only**; voice approvals rely on the model calling
+  `process_refund`. → reworded to scope the approval backstop to text; denials/escalations remain guaranteed on both.
+- 🟢 **[C-F5]** Dead exports: `hasSession` (`lib/db.ts`) and `getTool` (`lib/tools/index.ts`), both unreferenced. → removed.
+- 🟢 **[C-F6]** `DECISIONS.md` D7 still listed `MODELS.realtime = "gpt-4o-mini-realtime-preview"` (superseded by D38's
+  `gpt-realtime-mini`). → added a "⚠ Superseded by D38" note inline.
+- Money/security lens (dedicated agent): **CLEAN** — no way to issue a policy-forbidden refund or bypass R6.
+
+### Sweep 2 — re-review of the fixes → 3 findings (all fixed)
+
+- 🔴 **[C-F5 was half-applied]** `git status` showed `lib/tools/index.ts` UNMODIFIED — only `hasSession` had been
+  removed; `getTool` was still present. The hostile status-check caught it. → removed `getTool` (kept `TOOL_MAP`, still used at line 86).
+- 🟡 **[C-F3 refinement]** The at-bottom guard would also suppress scrolling when the **user sends their own
+  message** while scrolled up. → `send()` now sets `atBottomRef = true` first; the guard governs only passive
+  incoming content (voice transcripts).
+- 🟡 **[voice-connect-check fragility]** The real-browser WebRTC guard failed ("no request to `/v1/realtime/calls`
+  observed") against a **cold** dev server — its fixed 10s/15s waits raced Turbopack's on-demand compile of the
+  `/api/voice/token` route (compiled only at mic-click). Token mint verified working via direct `curl` (`ek_…`,
+  `gpt-realtime-mini`, 200); a warm re-run → **201**. → widened the guard's timeouts (20s waits, 45s SDP poll) + comment.
+
+### Sweep 3 — final full-system pass → **ZERO findings (clean)**
+
+- **Mechanical gate:** `tsc --noEmit` 0 · ESLint 0 · Prettier clean.
+- **Unit/integration:** Vitest **171/171** in place, AND on a fresh `git clone` + `npm ci` + `next build` + `npm test`
+  of the overlaid working tree (repo hygiene: no untracked build inputs; clean-checkout reproducible).
+- **Full eval suite:** `npm run evals` → **23/23 green** (16 baselines + 7 red-team) through the REAL agent, asserting
+  on emitted decision events.
+- **Both transports live:** text (evals) + **voice** — `voice-connect-check` drives a real headless-Chrome WebRTC SDP
+  exchange to `https://api.openai.com/v1/realtime/calls` → **201**.
+- **Dashboard — three demo requirements** confirmed on the running server by reading the `/api/events` firehose after
+  a debug trace: (1) **tool calls** (`tool_call` + `tool_result`), (2) **decisions** (a `decision`/`escalated`), (3)
+  **failures & retries** (`error` + `retry` attempts 1 & 2). `/admin` renders 200.
+- **Code diff re-read:** every change correct and self-consistent; no regressions introduced.
+- **Deferred [M2]** (voice transcript vs. same-exchange tool ordering): **accepted & documented** (see D49) — inherent
+  to async Realtime transcription; cosmetic one-row inversion; correctness/money-safety unaffected.
+
+**Result:** 3 sweeps, last clean · gate 0 · Vitest 171/171 (in-place + fresh-clone) · evals 23/23 · voice WebRTC 201 ·
+dashboard 3/3 requirements verified live. **Complete step closed.**

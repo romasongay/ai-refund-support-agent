@@ -234,10 +234,6 @@ export function getSession(sessionId: string): Session | undefined {
   return sessions.get(sessionId);
 }
 
-export function hasSession(sessionId: string): boolean {
-  return sessions.has(sessionId);
-}
-
 /** Restore a session's data to pristine (dates keep the session's frozen clock). */
 export function resetSession(sessionId: string): boolean {
   const session = sessions.get(sessionId);

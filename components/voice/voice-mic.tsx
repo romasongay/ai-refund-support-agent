@@ -77,10 +77,11 @@ export function VoiceMic({ sessionId, disabled, onTranscript }: VoiceMicProps) {
       <button
         type="button"
         onClick={onClick}
-        // Stays clickable while connecting so the user can always cancel an in-flight/hung connect
-        // (a click during an active state routes to stop() → abort). Only the parent `disabled`
-        // (e.g. text streaming) suppresses it.
-        disabled={disabled}
+        // STOP must always be reachable: while a call is active (connecting/listening/speaking) a click
+        // routes to stop() → abort, so the parent `disabled` (e.g. text streaming) must NOT suppress it —
+        // otherwise sending a text message mid-call would strand a hot mic with no way to end it. The
+        // parent only gates STARTING a new call.
+        disabled={disabled && !active}
         aria-pressed={active}
         aria-label={active ? "Stop voice conversation" : "Start voice conversation"}
         className={`flex items-center gap-2 rounded-full px-4 py-2 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${

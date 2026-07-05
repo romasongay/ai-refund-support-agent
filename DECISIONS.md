@@ -28,6 +28,9 @@ keep moving"). Format: `[Dn] Step N — decision — rationale`.
   from the very start, satisfying the §1 cost guard ("model names in a single config constant").
   `MODELS.text = "gpt-4o-mini"`, `MODELS.realtime = "gpt-4o-mini-realtime-preview"`. These are
   not to be upgraded without explicit human approval.
+  **⚠ Superseded by [D38]:** `MODELS.realtime` is now `"gpt-realtime-mini"` — the
+  `gpt-4o-mini-realtime-preview` id mints an ephemeral token but 404s on `/v1/realtime/calls`.
+  The mini→mini swap stays within the cost guard. See D38 for the diagnosis.
 - **[D8] Test script is non-watch** — `npm test` runs `vitest run` (one-shot) so sweeps and CI
   are non-interactive; `npm run test:watch` is the watch-mode variant. Vitest cannot unit-test
   async Server Components, so all agent/tool/data logic lives in plain, testable `lib/` modules.
@@ -266,3 +269,24 @@ keep moving"). Format: `[Dn] Step N — decision — rationale`.
   ones and even under an injection/authority/threat/plea), to treat calling the tool with the signed-in id
   as always-safe (the tool decides ownership → R6), and to act on the verdict in the same turn. The
   deterministic engine + the settleTurn backstop are the guarantee; the prompt just steers the model there.
+
+## Complete — Final full-system sweep
+
+- **[D49] Backlog [M2] accepted, not "fixed" — voice transcript vs. same-exchange tool ordering** — over voice,
+  a customer's finalized input transcript (`conversation.item.input_audio_transcription.completed`) can arrive
+  AFTER the tool call it prompted, because the model may emit `response.function_call_arguments.done` before
+  async transcription completes. The firehose orders by arrival (`SEQ`), so on the admin timeline a voice
+  Customer bubble can appear just below the tool row of the same exchange. **Decision: accept and document.** The
+  Realtime API exposes no reliable per-item logical clock to reorder by, and buffering transcripts to "fix" the
+  order would either delay live tool/decision rows or risk holding an event that never arrives — both worse than
+  a one-row cosmetic inversion. Correctness is unaffected: every event is attributed to the right session, and
+  the money **decision** is code-driven and always recorded exactly once (D42/D47). Text chat is unaffected
+  (server-ordered). Revisit only if the API later surfaces authored-at timestamps per conversation item.
+- **[D50] Complete-step verification bar** — the final sweep cycle exercised the whole system on the shipping
+  state, not just unit mocks: mechanical gate (tsc/ESLint/Prettier 0) · Vitest 171/171 (in-place AND a
+  fresh `git clone` + `npm ci` + `next build` + `npm test` of the overlaid working tree) · full eval suite
+  23/23 green through the real agent (decision-event assertions) · BOTH transports live (text via evals; voice
+  via `voice-connect-check` → real-browser WebRTC SDP → `/v1/realtime/calls` **201**) · dashboard's three demo
+  requirements confirmed on the running server via the firehose (tool_call/tool_result, a `decision`, and the
+  retry×2 + error failure trace). The Complete sweep also caught two self-inflicted issues (a half-applied dead-
+  export removal, and a `voice-connect-check` that raced Turbopack's cold-route compile) — both fixed before close.
