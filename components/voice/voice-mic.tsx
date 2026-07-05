@@ -13,7 +13,13 @@ interface VoiceMicProps {
   onTranscript: (role: "user" | "assistant", text: string) => void;
 }
 
-const ACTIVE: VoiceState[] = ["requesting-mic", "connecting", "listening", "speaking"];
+const ACTIVE: VoiceState[] = [
+  "requesting-mic",
+  "connecting",
+  "reconnecting",
+  "listening",
+  "speaking",
+];
 
 /** Push-to-connect microphone control. Toggles a live Realtime voice call and streams both sides'
  *  transcripts into the chat log. Degrades gracefully when voice is unsupported or the mic is blocked. */
@@ -112,6 +118,8 @@ function label(state: VoiceState): string {
       return "Requesting mic…";
     case "connecting":
       return "Connecting…";
+    case "reconnecting":
+      return "Reconnecting…";
     case "listening":
       return "Listening — tap to stop";
     case "speaking":

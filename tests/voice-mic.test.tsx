@@ -42,8 +42,10 @@ const okJson = (data: unknown) => ({ ok: true, json: async () => data });
 
 afterEach(() => {
   cleanup();
+  vi.useRealTimers();
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
+  MockPC.last = null;
   if ("mediaDevices" in navigator) {
     Object.defineProperty(navigator, "mediaDevices", { value: undefined, configurable: true });
   }
@@ -200,5 +202,132 @@ describe("VoiceMic", () => {
     expect(alert.textContent).toMatch(/HTTP 404/);
     expect(alert.textContent).toMatch(/does not exist/);
     expect(stopSpy).toHaveBeenCalled(); // torn down on failure
+  });
+});
+
+/**
+ * Reconnect behavior (regression: a live take saw a server-side session reset silently swap the voice,
+ * drop the tools, and lose context). A drop/reset must be VISIBLE and re-establish with our config.
+ */
+describe("VoiceMic auto-reconnect", () => {
+  const BACKOFF = 900; // > RECONNECT_BACKOFF_MS (800) in the client
+  const tokenAndSdp = () =>
+    vi.fn((url: string) =>
+      String(url).includes("/api/voice/token")
+        ? Promise.resolve(okJson({ value: "ek_x", expiresAt: 9_999_999_999, model: "m" }))
+        : Promise.resolve({ ok: true, status: 200, text: async () => "answer-sdp" }),
+    );
+  const tokenCalls = (f: ReturnType<typeof vi.fn>) =>
+    f.mock.calls.filter((c) => String(c[0]).includes("/api/voice/token")).length;
+  // Flush the pending promise chain (fetch → json → SDP …) without advancing wall time.
+  const flush = () => act(async () => void (await vi.advanceTimersByTimeAsync(0)));
+  const advance = (ms: number) => act(async () => void (await vi.advanceTimersByTimeAsync(ms)));
+
+  it("visibly reconnects with a FRESH token when the WebRTC connection drops (not a silent swap / dead error)", async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal("RTCPeerConnection", MockPC);
+    const getUserMedia = vi
+      .fn()
+      .mockResolvedValue({ getTracks: () => [{ stop: vi.fn() }] } as unknown as MediaStream);
+    setMediaDevices(getUserMedia);
+    const fetchMock = tokenAndSdp();
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<VoiceMic sessionId="s1" onTranscript={() => {}} />);
+    fireEvent.click(screen.getByRole("button", { name: /start voice/i }));
+    await flush();
+    const firstPc = MockPC.last!;
+    expect(firstPc.dc).toBeTruthy();
+    act(() => firstPc.dc!.onopen?.());
+    const before = tokenCalls(fetchMock);
+
+    // Simulate a transport drop.
+    await act(async () => {
+      firstPc.connectionState = "failed";
+      (firstPc.onconnectionstatechange as () => void)?.();
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    // Visible reconnecting state — the user is never silently swapped.
+    expect(screen.getByText(/reconnecting/i)).toBeTruthy();
+
+    // After the backoff: a fresh token is minted and a NEW peer connection is established (→ our voice +
+    // policy + tools), and the mic is NOT re-requested.
+    await advance(BACKOFF);
+    expect(tokenCalls(fetchMock)).toBeGreaterThan(before);
+    expect(MockPC.last).not.toBe(firstPc);
+    expect(getUserMedia).toHaveBeenCalledTimes(1);
+  });
+
+  it("treats a second session.created (server-side reset) as a visible reconnect", async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal("RTCPeerConnection", MockPC);
+    setMediaDevices(
+      vi.fn().mockResolvedValue({ getTracks: () => [{ stop: vi.fn() }] } as unknown as MediaStream),
+    );
+    const fetchMock = tokenAndSdp();
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<VoiceMic sessionId="s1" onTranscript={() => {}} />);
+    fireEvent.click(screen.getByRole("button", { name: /start voice/i }));
+    await flush();
+    const firstPc = MockPC.last!;
+    act(() => firstPc.dc!.onopen?.());
+
+    // First session.created is normal — no reconnect.
+    await act(async () => {
+      firstPc.dc!.onmessage?.({ data: JSON.stringify({ type: "session.created" }) });
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    const before = tokenCalls(fetchMock);
+    expect(screen.queryByText(/reconnecting/i)).toBeNull();
+
+    // A SECOND session.created on the same channel = the server rotated the session → visible reconnect.
+    await act(async () => {
+      firstPc.dc!.onmessage?.({ data: JSON.stringify({ type: "session.created" }) });
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(screen.getByText(/reconnecting/i)).toBeTruthy();
+    await advance(BACKOFF);
+    expect(tokenCalls(fetchMock)).toBeGreaterThan(before);
+  });
+
+  it("gives up with a visible error after exhausting the reconnect budget", async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal("RTCPeerConnection", MockPC);
+    const stopSpy = vi.fn();
+    setMediaDevices(
+      vi.fn().mockResolvedValue({ getTracks: () => [{ stop: stopSpy }] } as unknown as MediaStream),
+    );
+    // Token succeeds for the initial connect, then fails on every reconnect → budget drains → error.
+    let tokenHits = 0;
+    const fetchMock = vi.fn((url: string) => {
+      if (String(url).includes("/api/voice/token")) {
+        tokenHits += 1;
+        return tokenHits === 1
+          ? Promise.resolve(okJson({ value: "ek_x", expiresAt: 9_999_999_999, model: "m" }))
+          : Promise.resolve({ ok: false, status: 500, json: async () => ({ error: "down" }) });
+      }
+      return Promise.resolve({ ok: true, status: 200, text: async () => "answer-sdp" });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<VoiceMic sessionId="s1" onTranscript={() => {}} />);
+    fireEvent.click(screen.getByRole("button", { name: /start voice/i }));
+    await flush();
+    const firstPc = MockPC.last!;
+    act(() => firstPc.dc!.onopen?.());
+
+    await act(async () => {
+      firstPc.connectionState = "failed";
+      (firstPc.onconnectionstatechange as () => void)?.();
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    // Two bounded reconnect attempts, each failing to mint a token, then it gives up.
+    await advance(BACKOFF);
+    await advance(BACKOFF);
+
+    // Lands on a visible error + retry affordance (not an endless loop), mic released.
+    expect(screen.getByRole("button", { name: /start voice/i })).toBeTruthy();
+    expect(stopSpy).toHaveBeenCalled();
   });
 });
