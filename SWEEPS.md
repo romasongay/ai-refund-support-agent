@@ -633,3 +633,38 @@ requirements. Hostile-reviewer lens throughout; findings below.
 
 **Result:** 3 sweeps, last clean · gate 0 · Vitest 171/171 (in-place + fresh-clone) · evals 23/23 · voice WebRTC 201 ·
 dashboard 3/3 requirements verified live. **Complete step closed.**
+
+---
+
+## Post-launch — live-recording findings (Loom rehearsals)
+
+Findings surfaced by real voice-recording takes on `gpt-realtime-mini`, each fixed + regression-guarded and
+confirmed on a live take. Pushed to the public repo as they closed.
+
+- **[L1] SSE pill hung "connecting" on a pristine feed** → `lib/sse.ts` flushes an immediate `: connected`
+  preamble so `onopen` fires with zero backfill. Fixed `83b7089` (D51); Vitest guard added.
+- **[L2] Silent voice/identity swap on a session reset** → the client had no reconnect and re-asserted config
+  only via the token. Added a bounded, VISIBLE auto-reconnect (fresh token → our voice/policy/tools) + `session.created`
+  reset detection. Fixed `b641b3e` (D52). **Verified live:** forced offline ~3s → `[voice] reconnecting` + a second
+  `session.created`, visible recovery, R2 re-derived via tools post-recovery.
+- **[L3] Voice hedge instead of a tool call** → after denial + pressure + a cross-customer order pivot, the agent
+  asked the customer to "confirm delivery date/details" rather than calling the tools. Rule 4 tightened (fetch,
+  don't ask); rule 10 guards against false processing claims (an aggressive first rule-4 draft regressed the r04
+  authority-cave 3/3 at temp 0 — softened + rule 10 restored it). New eval `r08`. Fixed `fd2542d`. **Verified live:**
+  order-1001 → `get_order_details` fired, spoken R6 decline, no PII.
+- **[L4] Fabricated escalation rationale under pressure (CLOSED)** → on a final-sale order (ord_1003, R2) the agent
+  escalated but SPOKE "Clause R4 … exceeds $500" — a clause/threshold the engine never produced (the escalated
+  Decision itself was correctly deduped behind the R2 denial). `escalate_to_human` + `deny_refund` now re-derive
+  clauses + reason from the deterministic engine (model input is overridden); a non-escalate verdict yields a
+  canonical "escalated at the customer's request" reason citing the order's REAL clause. Prompt rule 5 forbids
+  citing any clause/figure a tool didn't return for that order. Deterministic tool tests prove a model-supplied
+  `["R4"]`/">$500" is overridden to `["R2"]`; evals `r07`/`r08` forbid "R4"/"$500" in a final-sale reply. Fixed
+  `ff4365d`. **Verified live — session `247eddc7`:** pressure round 2 → "…I can escalate this so a human reviewer
+  can take a closer look — would you like me to proceed?" (no R4, no $500, no threshold; escalation offered, not
+  unilateral); dashboard showed **denied (R2) only**, no escalated event. R6 re-check and the same-session
+  reconnect both re-passed. The vocal-inflection change heard mid-call was **prosody within the same alloy
+  session** (single `[voice] session.created`, no reconnect lines) — voice is fixed at session creation per the
+  SDK. **Fabrication finding closed.**
+
+**Post-launch verification bar (each fix):** tsc/ESLint/Prettier 0 · full offline Vitest green (now 179) · real
+eval **3/3 GREEN** (24/24: 16 baselines + 8 red-team) · live voice confirmation on the actual take.
