@@ -290,3 +290,24 @@ keep moving"). Format: `[Dn] Step N — decision — rationale`.
   requirements confirmed on the running server via the firehose (tool_call/tool_result, a `decision`, and the
   retry×2 + error failure trace). The Complete sweep also caught two self-inflicted issues (a half-applied dead-
   export removal, and a `voice-connect-check` that raced Turbopack's cold-route compile) — both fixed before close.
+
+## Post-launch — live-recording fixes
+
+- **[D51] SSE preamble so a pristine dashboard connects immediately** — a fresh feed (0 backfilled events)
+  wrote nothing until the first 15s heartbeat, so the platform withheld the response head and the admin
+  connection pill hung on "connecting" until the first byte. `lib/sse.ts` now flushes a leading `: connected`
+  comment on every connect, so `EventSource.onopen` fires at once (pill → green "open") even with zero events.
+  A regression test asserts a fresh feed's first bytes are the preamble. (Prior runs always had backfill, which
+  masked it.)
+- **[D52] Voice reconnect is VISIBLE + config-restoring; prior conversational memory is an ACCEPTED
+  limitation** — a live take saw a server-side Realtime session rotation silently swap the agent's voice, drop
+  the tools, and lose context (the client had no reconnect and re-asserted config only via the ephemeral token).
+  Per the GA API, `voice` is fixed at session creation and can't change via `session.update` after audio — so a
+  different voice proves a new session. Fix (`lib/client/voice.ts`): a bounded (2), **visible** auto-reconnect
+  (state `"reconnecting"`) triggered by a WebRTC drop OR a second `session.created` on a live channel; every
+  (re)connect mints a FRESH token, so the new session is always created with our voice (alloy), the
+  policy-grounded instructions binding the customer, and the tools. **Accepted limitation (decided, not built):**
+  on reconnect the session is visibly fresh ("Reconnecting…") with correct **identity + policy + tools** (so an
+  R6 ownership decline survives a reconnect), but **without prior conversational memory** — the earlier turns are
+  not replayed into the new session. Full transcript replay was declined as new complexity in the most delicate
+  subsystem right before the final recording; revisit only if conversational continuity across a reset is needed.
