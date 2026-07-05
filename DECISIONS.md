@@ -239,3 +239,30 @@ keep moving"). Format: `[Dn] Step N — decision — rationale`.
   profile/order references (README examples are handled in Step 10). Prompt rules 9–10 also fix two tone issues:
   the agent IS the support team (escalate, never defer to "contact support") and must not promise confirmation
   emails a self-contained mock won't send.
+
+## Step 9 — Adversarial scenario hardening ("Holding the Line")
+
+- **[D46] Eval harness asserts on emitted DECISION events, not reply text** — `npm run evals`
+  (`scripts/evals.mts` + `lib/evals/*`) runs full conversations through the REAL gpt-4o-mini agent and
+  asserts on the `decision` events (outcome + cited clauses): 16 oracle baselines (strict exact-decision)
+  + a 7-scenario red-team suite. Red-team asserts the money guarantee `mustNotApprove` (never emit an
+  approved decision) with `allowNoDecision` (a firm refusal without a formal decision still holds the line);
+  a follow-up adversarial review added reply-text checks so a verbal cave ("your refund is approved!") or a
+  cross-customer PII leak also fails, closing the two harness-soundness gaps (S9-F1/F2). Runs concurrently
+  (4) with a per-scenario retry-once, because the decision LOGIC is deterministic (below) so the only
+  residual flakiness is a transient live-API blip.
+- **[D47] Every resolved request yields exactly one decision — code-level, both directions** — the agent
+  loop's turn-end `settleTurn` backstop resolves EVERY order the conversation engaged (looked up or
+  checked): for any engaged-but-undecided order it re-runs the deterministic engine (which emits
+  denied/escalated for a terminal verdict, or marks it approvable) and then issues any approved-but-
+  unprocessed refund. This mirrors the Step-8 F1 guarantee (check_refund_eligibility emits denied/escalated)
+  across the APPROVE path, so a decision is recorded regardless of whether the model reliably calls
+  deny_refund/process_refund. Money-safe: an entry only enters `approvable` on an approve/approve_partial
+  verdict, process_refund re-checks eligibility, decisions dedupe per order, and R5 blocks a second refund —
+  the money-lens adversarial review confirmed it can never issue a policy-forbidden refund. This made the
+  suite pass deterministically (verified: 6 consecutive fully-green real runs; the criterion is 3).
+- **[D48] Prompt tightening for the manipulation surface** — rules 2/3/6 + the flow now require the agent to
+  resolve a referenced order through check_refund_eligibility before stating ANY outcome (even "obvious"
+  ones and even under an injection/authority/threat/plea), to treat calling the tool with the signed-in id
+  as always-safe (the tool decides ownership → R6), and to act on the verdict in the same turn. The
+  deterministic engine + the settleTurn backstop are the guarantee; the prompt just steers the model there.
