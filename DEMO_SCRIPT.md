@@ -5,10 +5,16 @@ by side: **Customer** (`http://localhost:3000`) and **Admin** (`http://localhost
 
 ### Pre-demo reset checklist (~1 min before recording)
 
-- [ ] `OPENAI_API_KEY` set in `.env.local`; `npm run dev` running; both pages load.
-- [ ] Admin dashboard status pill reads **open** (green). Refresh if it says "reconnecting".
-- [ ] Click **Reset** on the customer page (or `curl -X POST localhost:3000/api/reset -d '{}'`) so
-      stats start at 0 / the session list is clean.
+- [ ] `OPENAI_API_KEY` set in `.env.local`.
+- [ ] **Pristine state** — the surest reset is to **(re)start the dev server**: stop it (Ctrl-C) and run
+      `npm run dev` again. All state is in-memory, so a restart clears every session, event, and
+      conversation and restores the mock data. Then open both tabs **fresh** → empty dashboard, stats
+      0 / 0 / 0. _(Between takes without a restart: `curl -X POST http://localhost:3000/api/reset -H
+      "content-type: application/json" -d '{}'` does a FULL reset — then **reload the `/admin` tab** so
+      its local event log clears. Note: the customer page's **Reset** button only resets the **current
+      session**, not the whole dashboard.)_
+- [ ] Both pages load; Admin dashboard status pill reads **open** (green). Reload the tab if it says
+      "reconnecting".
 - [ ] Mic permission pre-granted for `localhost` (so the voice beat doesn't stall on the prompt).
 - [ ] Speakers on, notifications off, admin window visible beside the chat.
 
@@ -73,11 +79,14 @@ Open the repo. Hit three files:
 ## Beat 5 — Admin panel: failures & retries · ~1.5 min → maps to bullet (5)
 
 The spec asks to *see failures and retries* on the dashboard. Inject a realistic failure/retry trace
-(a dev-only, production-inert endpoint built for exactly this):
+with **one click, no terminal** — the dashboard header shows a **⚡ Simulate failure trace** button
+(dev-only; it does not render in a production build, and the endpoint behind it 404s in production):
 
-```bash
-curl -X POST http://localhost:3000/api/debug/emit -H "content-type: application/json" -d '{"sessionId":"sess_debugtrace"}'
-```
+> On the **Admin** window, click **⚡ Simulate failure trace** (top-right, beside the outcome stats).
+> Each click spins up a fresh `sess_debug_*` session that the dashboard auto-selects.
+>
+> _(Fallback if you prefer a terminal:_
+> `curl -X POST http://localhost:3000/api/debug/emit -H "content-type: application/json" -d '{"sessionId":"sess_debugtrace"}'`_)_
 
 On the **Admin** window (it auto-selects the newest session), show the prominent trace:
 
@@ -112,4 +121,6 @@ else's order (R6 ownership decline).
   confirms the WebRTC leg in a headless browser.
 - Dashboard empty → confirm the status pill is **open**; events backfill on open, so a late-opened
   tab still shows prior decisions.
-- Reset between takes with the **Reset** button (or `POST /api/reset`).
+- Reset between takes: `POST /api/reset` with an empty body for a FULL reset, then reload `/admin`; or
+  restart the dev server for a guaranteed clean slate. (The customer **Reset** button clears only the
+  current session.)

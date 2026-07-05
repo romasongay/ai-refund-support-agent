@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { DevTraceTrigger } from "@/components/admin/dev-trace-trigger";
 import { ErrorBoundary } from "@/components/admin/error-boundary";
 import { EventRow } from "@/components/admin/event-row";
 import {
@@ -153,6 +154,7 @@ export function AdminDashboard() {
           </p>
         </div>
         <div className="flex items-center gap-3 text-xs">
+          <DevTraceTrigger />
           <StatChip label="Approved" value={stats.approved} dot="bg-emerald-500" />
           <StatChip label="Denied" value={stats.denied} dot="bg-rose-500" />
           <StatChip label="Escalated" value={stats.escalated} dot="bg-amber-500" />

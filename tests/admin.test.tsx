@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, render, screen } from "@testing-library/react";
 import { AdminDashboard } from "@/components/admin/admin-dashboard";
+import { DevTraceTrigger } from "@/components/admin/dev-trace-trigger";
 import { ErrorBoundary } from "@/components/admin/error-boundary";
 import { EventRow } from "@/components/admin/event-row";
 import { isReasoningEvent } from "@/lib/client/events-stream";
@@ -9,6 +10,7 @@ import type { ReasoningEvent } from "@/lib/events";
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
+  vi.unstubAllEnvs();
   vi.restoreAllMocks();
 });
 
@@ -189,5 +191,34 @@ describe("ErrorBoundary", () => {
       </ErrorBoundary>,
     );
     expect(container.textContent).toContain("could not render");
+  });
+});
+
+describe("DevTraceTrigger (dev-only failure-trace demo control)", () => {
+  it("in development, POSTs a fresh sess_debug_* trace to /api/debug/emit on click", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200 });
+    vi.stubGlobal("fetch", fetchMock);
+    render(<DevTraceTrigger />);
+    const btn = screen.getByRole("button", { name: /Simulate failure trace/i });
+    await act(async () => {
+      btn.click();
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [url, opts] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe("/api/debug/emit");
+    expect(opts.method).toBe("POST");
+    const body = JSON.parse(String(opts.body)) as { sessionId: string };
+    // Fresh, namespace-restricted id so it can never forge a real customer session's log.
+    expect(body.sessionId).toMatch(/^sess_debug_/);
+  });
+
+  it("renders NOTHING in production, so it is never a user-facing surface", () => {
+    vi.stubEnv("NODE_ENV", "production");
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    const { container } = render(<DevTraceTrigger />);
+    expect(container.firstChild).toBeNull();
+    expect(screen.queryByRole("button", { name: /Simulate failure trace/i })).toBeNull();
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });
